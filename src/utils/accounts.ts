@@ -5,33 +5,16 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   addDoc,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { signInWithPopup } from "firebase/auth";
+import { db, auth, googleProvider, appleProvider } from "../lib/firebase";
 import { UserAccount } from "../types";
 
-const STORAGE_KEY = "flux_demo_registered_accounts";
-
-const DEFAULT_ACCOUNTS: UserAccount[] = [
-  {
-    id: "usr-001",
-    name: "Alex Tupaen",
-    email: "atupaen@gmail.com",
-    password: "summit-cedar-river-88",
-    createdAt: "2026-08-15T10:30:00Z",
-    sessionsCount: 3,
-  },
-  {
-    id: "usr-002",
-    name: "Flux Explorer",
-    email: "demo@flux.social",
-    password: "harbor-orchard-tempo-42",
-    createdAt: "2026-09-01T14:20:00Z",
-    sessionsCount: 2,
-  },
-];
+const STORAGE_KEY = "flux_registered_accounts";
 
 export function emailToDocId(email: string): string {
   return email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -39,10 +22,54 @@ export function emailToDocId(email: string): string {
 
 let firestoreInitialized = false;
 
+// Purge any legacy demo or seeded accounts
+export function cleanupSeededAccounts() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("flux_demo_registered_accounts");
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (a) =>
+            a.id !== "usr-001" &&
+            a.id !== "usr-002" &&
+            a.email !== "demo@flux.social" &&
+            !(a.email === "atupaen@gmail.com" && a.password === "summit-cedar-river-88")
+        );
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Delete seeded accounts from Firestore if present
+  try {
+    deleteDoc(doc(db, "users", "demo_flux_social")).catch(() => {});
+    deleteDoc(doc(db, "users", "usr-001")).catch(() => {});
+    deleteDoc(doc(db, "users", "usr-002")).catch(() => {});
+    getDoc(doc(db, "users", "atupaen_gmail_com"))
+      .then((snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.password === "summit-cedar-river-88" && (data?.id === "usr-001" || !data?.provider)) {
+            deleteDoc(doc(db, "users", "atupaen_gmail_com")).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    // ignore
+  }
+}
+
 // Initialize background real-time sync with Firestore
 export function initFirestoreSync() {
   if (firestoreInitialized || typeof window === "undefined") return;
   firestoreInitialized = true;
+  cleanupSeededAccounts();
 
   try {
     const usersCol = collection(db, "users");
@@ -50,43 +77,37 @@ export function initFirestoreSync() {
     onSnapshot(
       usersCol,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const cloudAccounts: UserAccount[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            cloudAccounts.push({
-              id: docSnap.id,
-              name: data.name || "User",
-              email: data.email || "",
-              password: data.password || "",
-              createdAt: data.createdAt || new Date().toISOString(),
-              sessionsCount: typeof data.sessionsCount === "number" ? data.sessionsCount : 1,
-              lastPasswordReset: data.lastPasswordReset,
-            });
-          });
-
-          // Merge with defaults if needed
-          const merged = [...cloudAccounts];
-          DEFAULT_ACCOUNTS.forEach((def) => {
-            if (!merged.some((m) => m.email.toLowerCase() === def.email.toLowerCase())) {
-              merged.push(def);
-            }
-          });
-
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-          } catch (e) {
-            // ignore
+        const cloudAccounts: UserAccount[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          // Skip any seeded account remnants
+          if (
+            docSnap.id === "demo_flux_social" ||
+            docSnap.id === "usr-001" ||
+            docSnap.id === "usr-002" ||
+            data.email === "demo@flux.social" ||
+            (data.email === "atupaen@gmail.com" && data.password === "summit-cedar-river-88")
+          ) {
+            return;
           }
-        } else {
-          // If Firestore is empty, seed defaults
-          DEFAULT_ACCOUNTS.forEach(async (acc) => {
-            try {
-              await setDoc(doc(db, "users", emailToDocId(acc.email)), acc, { merge: true });
-            } catch (err) {
-              console.warn("Could not seed default account to Firestore", err);
-            }
+          cloudAccounts.push({
+            id: docSnap.id,
+            name: data.name || "User",
+            email: data.email || "",
+            password: data.password || "",
+            createdAt: data.createdAt || new Date().toISOString(),
+            sessionsCount: typeof data.sessionsCount === "number" ? data.sessionsCount : 1,
+            lastPasswordReset: data.lastPasswordReset,
+            provider: data.provider,
+            avatarUrl: data.avatarUrl,
+            firebaseUid: data.firebaseUid,
           });
+        });
+
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudAccounts));
+        } catch (e) {
+          // ignore
         }
       },
       (error) => {
@@ -110,17 +131,22 @@ export function getRegisteredAccounts(): UserAccount[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
-      return DEFAULT_ACCOUNTS;
+      return [];
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+      return parsed.filter(
+        (a) =>
+          a.id !== "usr-001" &&
+          a.id !== "usr-002" &&
+          a.email !== "demo@flux.social" &&
+          !(a.email === "atupaen@gmail.com" && a.password === "summit-cedar-river-88")
+      );
     }
-    return DEFAULT_ACCOUNTS;
+    return [];
   } catch (err) {
     console.warn("Could not read accounts from storage", err);
-    return DEFAULT_ACCOUNTS;
+    return [];
   }
 }
 
@@ -129,6 +155,198 @@ export function findAccount(email: string): UserAccount | undefined {
   const accounts = getRegisteredAccounts();
   const lower = email.trim().toLowerCase();
   return accounts.find((acc) => acc.email.toLowerCase() === lower);
+}
+
+/**
+ * Upserts a social account (Google or Apple) into Firestore and local cache
+ */
+export async function createOrUpdateSocialAccount(params: {
+  name: string;
+  email: string;
+  provider: "google" | "apple";
+  avatarUrl?: string;
+  firebaseUid?: string;
+}): Promise<UserAccount> {
+  const email = params.email.trim();
+  const docId = emailToDocId(email);
+  const now = new Date().toISOString();
+
+  const existing = findAccount(email);
+
+  const account: UserAccount = {
+    id: existing?.id || (params.firebaseUid ? `usr-${params.firebaseUid.slice(0, 10)}` : docId),
+    name: params.name || existing?.name || (params.provider === "apple" ? "Apple User" : "Google User"),
+    email,
+    createdAt: existing?.createdAt || now,
+    sessionsCount: (existing?.sessionsCount || 0) + 1,
+    provider: params.provider,
+    avatarUrl: params.avatarUrl || existing?.avatarUrl,
+    firebaseUid: params.firebaseUid || existing?.firebaseUid,
+  };
+
+  // 1. Update local storage
+  const current = getRegisteredAccounts().filter((a) => a.email.toLowerCase() !== email.toLowerCase());
+  current.push(account);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+  } catch (e) {
+    // ignore
+  }
+
+  // 2. Persist to Firestore
+  try {
+    const userDocRef = doc(db, "users", docId);
+    await setDoc(
+      userDocRef,
+      {
+        ...account,
+        lastLoginAt: now,
+      },
+      { merge: true }
+    );
+
+    // Record security log
+    await addDoc(collection(db, "security_logs"), {
+      action: `SOCIAL_AUTH_${params.provider.toUpperCase()}`,
+      email,
+      timestamp: now,
+      result: "SUCCESS",
+      source: "web_auth",
+    });
+  } catch (err) {
+    console.warn("Could not persist social account to Firestore:", err);
+  }
+
+  return account;
+}
+
+export interface SocialAuthResponse {
+  success: boolean;
+  user?: UserAccount;
+  error?: string;
+  needsFallback?: boolean;
+  provider?: "google" | "apple";
+}
+
+/**
+ * Executes real Google sign-in using Firebase Auth popup, falling back gracefully
+ * if the provider is not enabled in Firebase Console.
+ */
+export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const fbUser = result.user;
+
+    if (!fbUser.email) {
+      return {
+        success: false,
+        error: "Google account did not provide an email address.",
+      };
+    }
+
+    const account = await createOrUpdateSocialAccount({
+      name: fbUser.displayName || fbUser.email.split("@")[0],
+      email: fbUser.email,
+      provider: "google",
+      avatarUrl: fbUser.photoURL || undefined,
+      firebaseUid: fbUser.uid,
+    });
+
+    return { success: true, user: account };
+  } catch (error: any) {
+    const errorCode = error?.code || "";
+    const errorMsg = error?.message || "";
+
+    // When the provider is not yet activated in Firebase Console
+    if (
+      errorCode === "auth/configuration-not-found" ||
+      errorCode === "auth/operation-not-allowed" ||
+      errorMsg.includes("configuration-not-found") ||
+      errorMsg.includes("operation-not-allowed")
+    ) {
+      console.warn("Firebase Google Auth provider is not enabled in Firebase Console:", errorCode || errorMsg);
+      return {
+        success: false,
+        needsFallback: true,
+        provider: "google",
+      };
+    }
+
+    let message = errorMsg || "Failed to sign in with Google.";
+
+    if (errorCode === "auth/popup-closed-by-user") {
+      message = "Sign-in popup was closed before completing.";
+    } else if (errorCode === "auth/popup-blocked") {
+      message = "Sign-in popup was blocked by browser. Please allow popups for this site.";
+    } else if (errorCode === "auth/unauthorized-domain") {
+      message =
+        "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
+    } else if (errorCode === "auth/network-request-failed") {
+      message = "Network error connecting to Firebase Authentication.";
+    } else {
+      console.warn("Firebase Google Sign-In notice:", error);
+    }
+
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Executes Apple sign-in using Firebase Auth popup, falling back gracefully
+ * if the provider is not enabled in Firebase Console.
+ */
+export async function signInWithAppleService(): Promise<SocialAuthResponse> {
+  try {
+    const result = await signInWithPopup(auth, appleProvider);
+    const fbUser = result.user;
+
+    const email = fbUser.email || `${fbUser.uid}@privaterelay.appleid.com`;
+    const name = fbUser.displayName || "Apple User";
+
+    const account = await createOrUpdateSocialAccount({
+      name,
+      email,
+      provider: "apple",
+      firebaseUid: fbUser.uid,
+    });
+
+    return { success: true, user: account };
+  } catch (error: any) {
+    const errorCode = error?.code || "";
+    const errorMsg = error?.message || "";
+
+    // When the provider is not yet activated in Firebase Console
+    if (
+      errorCode === "auth/configuration-not-found" ||
+      errorCode === "auth/operation-not-allowed" ||
+      errorMsg.includes("configuration-not-found") ||
+      errorMsg.includes("operation-not-allowed")
+    ) {
+      console.warn("Firebase Apple Auth provider is not enabled in Firebase Console:", errorCode || errorMsg);
+      return {
+        success: false,
+        needsFallback: true,
+        provider: "apple",
+      };
+    }
+
+    let message = errorMsg || "Failed to sign in with Apple.";
+
+    if (errorCode === "auth/popup-closed-by-user") {
+      message = "Sign-in popup was closed before completing.";
+    } else if (errorCode === "auth/popup-blocked") {
+      message = "Sign-in popup was blocked by browser. Please allow popups for this site.";
+    } else if (errorCode === "auth/unauthorized-domain") {
+      message =
+        "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
+    } else if (errorCode === "auth/network-request-failed") {
+      message = "Network error connecting to Firebase Authentication.";
+    } else {
+      console.warn("Firebase Apple Sign-In notice:", error);
+    }
+
+    return { success: false, error: message };
+  }
 }
 
 /**

@@ -65,4 +65,7 @@ export interface UserAccount {
   createdAt: string;
   sessionsCount: number;
   lastPasswordReset?: string;
+  provider?: "password" | "google" | "apple";
+  avatarUrl?: string;
+  firebaseUid?: string;
 }

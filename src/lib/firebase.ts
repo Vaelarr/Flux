@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, Firestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, OAuthProvider, Auth } from "firebase/auth";
 import firebaseConfigJson from "../../firebase-applet-config.json";
 
 const firebaseConfig = {
@@ -28,4 +29,20 @@ try {
   db = getFirestore(app);
 }
 
-export { app, db };
+let auth: Auth;
+try {
+  auth = getAuth(app);
+} catch (e) {
+  console.warn("Failed to initialize Firebase Auth with app instance", e);
+  auth = getAuth();
+}
+
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
+
+const appleProvider = new OAuthProvider("apple.com");
+appleProvider.addScope("email");
+appleProvider.addScope("name");
+
+export { app, db, auth, googleProvider, appleProvider };
+
