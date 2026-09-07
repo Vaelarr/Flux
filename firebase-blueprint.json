@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "Registered user accounts with profile and authentication state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "sessionsCount": { "type": "number" },
+        "lastPasswordReset": { "type": "string" }
+      },
+      "required": ["email", "name"]
+    },
+    "password_resets": {
+      "title": "Password Resets",
+      "description": "Active password reset requests with dual-track tokens and expiration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "otpCode": { "type": "string" },
+        "magicToken": { "type": "string" },
+        "status": { "type": "string" },
+        "expiresAt": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "otpCode", "magicToken"]
+    },
+    "security_logs": {
+      "title": "Security Audit Logs",
+      "description": "Audit trail for password resets, session terminations, and logins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "action": { "type": "string" },
+        "email": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "result": { "type": "string" }
+      },
+      "required": ["timestamp", "action", "result"]
+    }
+  },
+  "auth": {
+    "providers": ["email"]
+  }
+}

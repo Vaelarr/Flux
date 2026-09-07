@@ -1,0 +1,47 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="flux-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#0E5B10" />
+      <stop offset="100%" stopColor="#093B0A" />
+    </linearGradient>
+    <linearGradient id="flux-wave" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#FFFFFF" />
+      <stop offset="60%" stopColor="#FBF5DD" />
+      <stop offset="100%" stopColor="#E7E1B1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle container -->
+  <rect width="32" height="32" rx="8.5" fill="url(#flux-bg)" />
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.75" stroke="#FFFFFF" stroke-opacity="0.15" fill="none" />
+
+  <!-- Flowing 'F' emblem: River currents forming letter F -->
+  <!-- Main stem & upper flowing wave -->
+  <path
+    d="M 9.5 24 V 12.5 C 9.5 9 12 7.2 15.5 7.2 C 17.8 7.2 20.2 8 22.8 7.4"
+    stroke="url(#flux-wave)"
+    stroke-width="2.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Mid flowing wave -->
+  <path
+    d="M 9.5 15.5 C 12.5 15.5 15.2 16.2 18.8 15.6"
+    stroke="url(#flux-wave)"
+    stroke-width="2.8"
+    stroke-linecap="round"
+  />
+
+  <!-- Lower companion stream -->
+  <path
+    d="M 14.5 22.2 C 16.8 22.2 18.8 22.8 21.8 22.2"
+    stroke="#E7E1B1"
+    stroke-width="2.2"
+    stroke-linecap="round"
+    stroke-opacity="0.85"
+  />
+
+  <!-- Accent pebble / droplet -->
+  <circle cx="22.6" cy="15.5" r="1.3" fill="#E7E1B1" opacity="0.95" />
+</svg>

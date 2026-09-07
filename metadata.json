@@ -1,0 +1,6 @@
+{
+  "name": "Flux",
+  "description": "A calm, chronological social network with straightforward and secure password recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

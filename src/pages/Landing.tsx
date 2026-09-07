@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import FluxLogo, { FluxMark } from "../components/FluxLogo";
 
 const FEATURES = [
   { n: "01", title: "Chronological feed", desc: "Posts appear in the order they were written. No algorithm decides what you see — your choices do." },
@@ -30,7 +31,7 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login" className="btn btn-ghost">Sign in</Link>
-            <Link to="/login" className="btn btn-forest">Join free</Link>
+            <Link to="/signup" className="btn btn-forest">Join free</Link>
           </div>
         </nav>
       </header>
@@ -56,7 +57,7 @@ export default function Landing() {
               placeholder="your@email.com"
               className="input flex-1"
             />
-            <Link to="/login" className="btn btn-forest px-5 text-center">
+            <Link to="/signup" state={{ email }} className="btn btn-forest px-5 text-center">
               Join Flux →
             </Link>
           </form>
@@ -122,7 +123,10 @@ export default function Landing() {
           <div key={f.n}>
             <div className="grid md:grid-cols-[80px_1fr_2fr] gap-4 md:gap-8 py-6 items-baseline">
               <span className="font-heading text-sm text-dim font-light">{f.n}</span>
-              <h3 className="font-heading text-xl font-semibold text-forest">{f.title}</h3>
+              <h3 className="font-heading text-xl font-semibold text-forest flex items-center gap-2">
+                <span>{f.title}</span>
+                {f.n === "04" && <FluxMark className="w-5 h-5" />}
+              </h3>
               <p className="text-sm text-dim leading-relaxed">{f.desc}</p>
             </div>
             {i < FEATURES.length - 1 && <hr className="rule" />}
@@ -168,7 +172,7 @@ export default function Landing() {
                 onFocus={(e) => { e.target.style.borderColor = "rgba(251,245,221,0.6)"; }}
                 onBlur={(e) => { e.target.style.borderColor = "rgba(251,245,221,0.25)"; }}
               />
-              <Link to="/login"
+              <Link to="/signup"
                 className="block w-full text-center py-3.5 rounded-[6px] text-sm font-semibold transition-all"
                 style={{ background: "#FBF5DD", color: "#0D530E" }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E7E1B1"; }}
@@ -198,19 +202,7 @@ export default function Landing() {
 }
 
 /* ── Shared exports ── */
-export function FluxLogo() {
-  return (
-    <Link to="/" className="flex items-center gap-2 flex-shrink-0">
-      <div className="w-7 h-7 rounded-[5px] flex items-center justify-center"
-        style={{ background: "#0D530E" }}>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-          <path d="M6.5 1L2 7.5H6L5.5 12L11 5.5H7L6.5 1Z" fill="#FBF5DD" />
-        </svg>
-      </div>
-      <span className="font-heading font-bold text-lg text-forest tracking-tight">Flux</span>
-    </Link>
-  );
-}
+export { default as FluxLogo, FluxMark } from "../components/FluxLogo";
 
 function Avi({ name, size = "sm" }: { name: string; size?: "sm" | "md" }) {
   const initials = name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();

@@ -167,8 +167,47 @@ body {
   0%   { transform: scale(0.85); opacity: 0.6; }
   100% { transform: scale(1.65); opacity: 0; }
 }
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .animate-fade-up { animation: fade-up 0.35s ease forwards; }
 .animate-pulse-ring { animation: pulse-ring 2s ease-out infinite; }
+.animate-pulse-subtle { animation: pulse-subtle 1.5s ease-in-out infinite; }
+.loading-bar-indicator { animation: loading-bar 1.3s ease-in-out infinite; }
+
+/* Skeleton screen styles matching cream & sand palette */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(231, 225, 177, 0.45) 0%,
+    rgba(251, 245, 221, 0.95) 50%,
+    rgba(231, 225, 177, 0.45) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.7s infinite ease-in-out;
+  border-radius: 6px;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 3px; }

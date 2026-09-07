@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import PasswordReset from "./pages/PasswordReset";
 
 export default function App() {
@@ -9,6 +10,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Register />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
