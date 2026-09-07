@@ -26,10 +26,12 @@ import {
 import NistPasswordValidator from "../components/NistPasswordValidator";
 import AuthSkeleton from "../components/AuthSkeleton";
 import SocialAuthModal from "../components/SocialAuthModal";
+import { useToast } from "../components/Toast";
 
 export default function Register() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showToast } = useToast();
 
   // Form states
   const [name, setName] = useState(location.state?.name ?? "");
@@ -80,8 +82,19 @@ export default function Register() {
     setIsSubmitting(false);
 
     if (res.success && res.user) {
-      setCreatedEmail(res.user.email);
+      const userEmail = res.user.email;
+      setCreatedEmail(userEmail);
       setAccountCreated(true);
+      showToast({
+        title: "Account created successfully",
+        message: `Your account was created via ${provider}. Welcome to Flux!`,
+        type: "notice-green",
+        duration: 5000,
+        action: {
+          label: "Sign in",
+          onClick: () => navigate("/login", { state: { email: userEmail, fromRegistration: true } }),
+        },
+      });
     } else if (res.needsFallback) {
       setSocialModalState({
         isOpen: true,
@@ -109,6 +122,16 @@ export default function Register() {
     setCreatedEmail(email);
     setIsSubmitting(false);
     setAccountCreated(true);
+    showToast({
+      title: "Account created successfully",
+      message: "Welcome to Flux! Your personal profile is now active.",
+      type: "notice-green",
+      duration: 5000,
+      action: {
+        label: "Sign in now",
+        onClick: () => navigate("/login", { state: { email, fromRegistration: true } }),
+      },
+    });
   };
 
   return (
@@ -151,7 +174,7 @@ export default function Register() {
                   type="button"
                   onClick={() =>
                     navigate("/login", {
-                      state: { email: createdEmail },
+                      state: { email: createdEmail, fromRegistration: true },
                     })
                   }
                   className="btn btn-forest w-full py-3.5 text-sm gap-2 font-medium flex items-center justify-center"

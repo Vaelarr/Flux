@@ -33,6 +33,7 @@ import {
 import { updatePassword, saveResetChallenge } from "../utils/accounts";
 import EmailSimulatorModal from "../components/EmailSimulatorModal";
 import NistPasswordValidator from "../components/NistPasswordValidator";
+import { useToast } from "../components/Toast";
 
 const STEPS: { key: ResetStep; label: string }[] = [
   { key: "email", label: "Identity" },
@@ -47,6 +48,7 @@ export default function PasswordReset() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { showToast } = useToast();
 
   const fromSignup = location.state?.fromSignup === true;
   const initialEmail = location.state?.email || searchParams.get("email") || "";
@@ -312,6 +314,23 @@ export default function PasswordReset() {
           if (expiryRef.current) clearInterval(expiryRef.current);
           updatePassword(email, newPassword);
           go("success");
+          showToast({
+            title: "Password reset complete",
+            message: "Your new password has been securely saved and verified.",
+            type: "security",
+            duration: 6000,
+            action: {
+              label: "Sign in",
+              onClick: () =>
+                navigate("/login", {
+                  state: {
+                    email,
+                    fromReset: true,
+                    sessionsRevoked: revokeAllSessions,
+                  },
+                }),
+            },
+          });
         }, 400);
       }, 500);
     }, 650);

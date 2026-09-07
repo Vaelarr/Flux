@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { CheckCircle2, ShieldCheck, Eye, EyeOff, RefreshCw, AlertCircle, ArrowRight, X } from "lucide-react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -12,9 +12,11 @@ import {
 } from "../utils/accounts";
 import AuthSkeleton from "../components/AuthSkeleton";
 import SocialAuthModal from "../components/SocialAuthModal";
+import { useToast } from "../components/Toast";
 
 export default function Login() {
   const location = useLocation();
+  const { showToast } = useToast();
   const fromReset = location.state?.fromReset === true;
   const sessionsRevoked = location.state?.sessionsRevoked === true;
   const [email, setEmail] = useState<string>(location.state?.email ?? "");
@@ -32,6 +34,26 @@ export default function Login() {
     isOpen: false,
     provider: "google",
   });
+
+  useEffect(() => {
+    if (fromReset) {
+      showToast({
+        title: "Password updated successfully",
+        message: sessionsRevoked
+          ? "All prior sessions were terminated. Please sign in with your new password."
+          : "Your new password is now active. Please sign in.",
+        type: "security",
+        duration: 6000,
+      });
+    } else if (location.state?.fromRegistration) {
+      showToast({
+        title: "Registration confirmed",
+        message: "Your Flux account is ready. Please sign in to access your timeline.",
+        type: "notice-green",
+        duration: 5000,
+      });
+    }
+  }, [fromReset, sessionsRevoked, location.state, showToast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +124,12 @@ export default function Login() {
 
       setLoading(false);
       setDone(true);
+      showToast({
+        title: "Signed in successfully",
+        message: `Welcome back to Flux, ${acc.name || "friend"}!`,
+        type: "notice-green",
+        duration: 4500,
+      });
     } catch (err) {
       setLoading(false);
       setErrorMsg("An unexpected error occurred while verifying credentials. Please try again.");
@@ -123,6 +151,12 @@ export default function Login() {
     if (result.success && result.user) {
       setEmail(result.user.email);
       setDone(true);
+      showToast({
+        title: "Signed in successfully",
+        message: `Connected via ${provider} as ${result.user.email}.`,
+        type: "notice-green",
+        duration: 4500,
+      });
     } else if (result.needsFallback) {
       setSocialModalState({
         isOpen: true,
