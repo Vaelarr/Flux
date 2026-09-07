@@ -148,22 +148,41 @@ export default function Login() {
             <p className="text-sm text-dim">Welcome back.</p>
           </div>
 
-          {errorMsg && (
-            <div className="p-3 mb-4 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2 animate-fade-up">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p>{errorMsg}</p>
-                <Link
-                  to="/reset-password"
-                  state={{ email }}
-                  className="inline-flex items-center gap-1 font-semibold text-red-800 hover:underline pt-0.5"
-                >
-                  <span>Reset password for this account</span>
-                  <ArrowRight className="w-3 h-3" />
-                </Link>
+          {errorMsg && (() => {
+            const isPopupClosed =
+              errorMsg.toLowerCase().includes("closed") ||
+              errorMsg.toLowerCase().includes("cancelled") ||
+              errorMsg.toLowerCase().includes("blocked");
+
+            return (
+              <div
+                className={`p-3 mb-4 rounded-lg text-xs flex items-start gap-2.5 animate-fade-up ${
+                  isPopupClosed
+                    ? "bg-amber-50 border border-amber-200 text-amber-900"
+                    : "bg-red-50 border border-red-200 text-red-700"
+                }`}
+              >
+                <AlertCircle
+                  className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                    isPopupClosed ? "text-amber-600" : "text-red-500"
+                  }`}
+                />
+                <div className="space-y-1">
+                  <p className="font-medium">{errorMsg}</p>
+                  {!isPopupClosed && !errorMsg.includes("Google") && !errorMsg.includes("Apple") && (
+                    <Link
+                      to="/reset-password"
+                      state={{ email }}
+                      className="inline-flex items-center gap-1 font-semibold text-red-800 hover:underline pt-0.5"
+                    >
+                      <span>Reset password for this account</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {done ? (
             <div className="animate-fade-up text-center py-8">
@@ -280,6 +299,11 @@ export default function Login() {
         provider={socialModalState.provider}
         initialEmail={email}
         onClose={() => setSocialModalState((prev) => ({ ...prev, isOpen: false }))}
+        onCancel={() => {
+          setErrorMsg(
+            `The ${socialModalState.provider === "google" ? "Google" : "Apple"} sign-in window was closed before finishing authentication.`
+          );
+        }}
         onSuccess={(account) => {
           setEmail(account.email);
           setDone(true);

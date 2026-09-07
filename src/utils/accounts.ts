@@ -111,11 +111,14 @@ export function initFirestoreSync() {
         }
       },
       (error) => {
-        console.warn("Firestore snapshot listener error:", error);
+        // Soft fallback to offline local cache if network is temporarily interrupted
+        if (error?.code !== "unavailable") {
+          console.warn("Firestore snapshot sync status:", error?.message || error);
+        }
       }
     );
-  } catch (err) {
-    console.warn("Could not setup Firestore sync:", err);
+  } catch {
+    // Soft fallback
   }
 }
 
@@ -224,6 +227,7 @@ export interface SocialAuthResponse {
   success: boolean;
   user?: UserAccount;
   error?: string;
+  isPopupClosed?: boolean;
   needsFallback?: boolean;
   provider?: "google" | "apple";
 }
@@ -272,12 +276,20 @@ export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
       };
     }
 
+    const isPopupClosed =
+      errorCode === "auth/popup-closed-by-user" ||
+      errorCode === "auth/cancelled-popup-request" ||
+      errorMsg.toLowerCase().includes("popup-closed-by-user") ||
+      errorMsg.toLowerCase().includes("closed by user") ||
+      errorMsg.toLowerCase().includes("popup was closed") ||
+      errorMsg.toLowerCase().includes("window closed");
+
     let message = errorMsg || "Failed to sign in with Google.";
 
-    if (errorCode === "auth/popup-closed-by-user") {
-      message = "Sign-in popup was closed before completing.";
+    if (isPopupClosed) {
+      message = "The Google sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
     } else if (errorCode === "auth/popup-blocked") {
-      message = "Sign-in popup was blocked by browser. Please allow popups for this site.";
+      message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
     } else if (errorCode === "auth/unauthorized-domain") {
       message =
         "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
@@ -287,7 +299,12 @@ export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
       console.warn("Firebase Google Sign-In notice:", error);
     }
 
-    return { success: false, error: message };
+    return {
+      success: false,
+      error: message,
+      isPopupClosed,
+      provider: "google",
+    };
   }
 }
 
@@ -330,12 +347,20 @@ export async function signInWithAppleService(): Promise<SocialAuthResponse> {
       };
     }
 
+    const isPopupClosed =
+      errorCode === "auth/popup-closed-by-user" ||
+      errorCode === "auth/cancelled-popup-request" ||
+      errorMsg.toLowerCase().includes("popup-closed-by-user") ||
+      errorMsg.toLowerCase().includes("closed by user") ||
+      errorMsg.toLowerCase().includes("popup was closed") ||
+      errorMsg.toLowerCase().includes("window closed");
+
     let message = errorMsg || "Failed to sign in with Apple.";
 
-    if (errorCode === "auth/popup-closed-by-user") {
-      message = "Sign-in popup was closed before completing.";
+    if (isPopupClosed) {
+      message = "The Apple ID sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
     } else if (errorCode === "auth/popup-blocked") {
-      message = "Sign-in popup was blocked by browser. Please allow popups for this site.";
+      message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
     } else if (errorCode === "auth/unauthorized-domain") {
       message =
         "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
@@ -345,7 +370,12 @@ export async function signInWithAppleService(): Promise<SocialAuthResponse> {
       console.warn("Firebase Apple Sign-In notice:", error);
     }
 
-    return { success: false, error: message };
+    return {
+      success: false,
+      error: message,
+      isPopupClosed,
+      provider: "apple",
+    };
   }
 }
 

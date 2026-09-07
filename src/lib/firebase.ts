@@ -1,7 +1,19 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, Firestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  getFirestore,
+  setLogLevel,
+  Firestore,
+} from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, OAuthProvider, Auth } from "firebase/auth";
 import firebaseConfigJson from "../../firebase-applet-config.json";
+
+// Silence verbose internal Firestore networking retries and proxy warnings
+try {
+  setLogLevel("silent");
+} catch {
+  // ignore
+}
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey,
@@ -21,19 +33,28 @@ const databaseId =
 
 let db: Firestore;
 try {
-  db = databaseId && databaseId !== "(default)"
-    ? getFirestore(app, databaseId)
-    : getFirestore(app);
-} catch (e) {
-  console.warn("Falling back to default Firestore database", e);
-  db = getFirestore(app);
+  const firestoreSettings = {
+    experimentalForceLongPolling: true,
+  };
+  db =
+    databaseId && databaseId !== "(default)"
+      ? initializeFirestore(app, firestoreSettings, databaseId)
+      : initializeFirestore(app, firestoreSettings);
+} catch {
+  try {
+    db =
+      databaseId && databaseId !== "(default)"
+        ? getFirestore(app, databaseId)
+        : getFirestore(app);
+  } catch {
+    db = getFirestore(app);
+  }
 }
 
 let auth: Auth;
 try {
   auth = getAuth(app);
-} catch (e) {
-  console.warn("Failed to initialize Firebase Auth with app instance", e);
+} catch {
   auth = getAuth();
 }
 

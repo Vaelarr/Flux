@@ -191,12 +191,29 @@ export default function Register() {
                 </p>
               </div>
 
-              {errorMsg && (
-                <div className="p-3 mb-4 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2 animate-fade-up">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <p>{errorMsg}</p>
-                </div>
-              )}
+              {errorMsg && (() => {
+                const isPopupClosed =
+                  errorMsg.toLowerCase().includes("closed") ||
+                  errorMsg.toLowerCase().includes("cancelled") ||
+                  errorMsg.toLowerCase().includes("blocked");
+
+                return (
+                  <div
+                    className={`p-3 mb-4 rounded-lg text-xs flex items-start gap-2.5 animate-fade-up ${
+                      isPopupClosed
+                        ? "bg-amber-50 border border-amber-200 text-amber-900"
+                        : "bg-red-50 border border-red-200 text-red-700"
+                    }`}
+                  >
+                    <AlertCircle
+                      className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                        isPopupClosed ? "text-amber-600" : "text-red-500"
+                      }`}
+                    />
+                    <p className="font-medium">{errorMsg}</p>
+                  </div>
+                );
+              })()}
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Full Name */}
@@ -358,6 +375,11 @@ export default function Register() {
         provider={socialModalState.provider}
         initialEmail={email}
         onClose={() => setSocialModalState((prev) => ({ ...prev, isOpen: false }))}
+        onCancel={() => {
+          setErrorMsg(
+            `The ${socialModalState.provider === "google" ? "Google" : "Apple"} sign-up window was closed before finishing authentication.`
+          );
+        }}
         onSuccess={(account) => {
           setCreatedEmail(account.email);
           setAccountCreated(true);

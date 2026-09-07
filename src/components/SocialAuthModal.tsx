@@ -6,6 +6,7 @@ import { createOrUpdateSocialAccount } from "../utils/accounts";
 interface SocialAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onCancel?: () => void;
   provider: "google" | "apple";
   initialEmail?: string;
   onSuccess: (account: UserAccount) => void;
@@ -14,6 +15,7 @@ interface SocialAuthModalProps {
 export default function SocialAuthModal({
   isOpen,
   onClose,
+  onCancel,
   provider,
   initialEmail = "",
   onSuccess,
@@ -27,6 +29,12 @@ export default function SocialAuthModal({
   const [showDocs, setShowDocs] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleDismiss = () => {
+    if (isSubmitting) return;
+    onClose();
+    if (onCancel) onCancel();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +65,7 @@ export default function SocialAuthModal({
       id="social-auth-modal-backdrop"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm animate-fade-in"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) onClose();
+        if (e.target === e.currentTarget && !isSubmitting) handleDismiss();
       }}
     >
       <div
@@ -68,7 +76,7 @@ export default function SocialAuthModal({
         <button
           id="social-auth-modal-close"
           type="button"
-          onClick={onClose}
+          onClick={handleDismiss}
           disabled={isSubmitting}
           className="absolute top-4 right-4 text-dim hover:text-ink p-1 rounded-md transition-colors"
           aria-label="Close dialog"
@@ -154,7 +162,7 @@ export default function SocialAuthModal({
             <button
               id="social-auth-cancel-btn"
               type="button"
-              onClick={onClose}
+              onClick={handleDismiss}
               disabled={isSubmitting}
               className="btn btn-outline w-full py-2 text-xs"
             >
