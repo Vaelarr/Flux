@@ -184,7 +184,7 @@ export default function SocialAuthModal({
 
           {showDocs && (
             <div className="mt-2 p-2.5 bg-paper rounded text-[11px] text-ink/75 leading-relaxed space-y-1">
-              <p>1. Open the <strong>Firebase Console</strong> for project <code>gen-lang-client-0900533854</code>.</p>
+              <p>1. Open the <strong>Firebase Console</strong> for project <code>flux-4e159</code>.</p>
               <p>2. Navigate to <strong>Build &gt; Authentication &gt; Sign-in method</strong>.</p>
               <p>3. Click <strong>Add new provider</strong> &gt; Select <strong>{isGoogle ? "Google" : "Apple"}</strong> &gt; Toggle <strong>Enable</strong> and save.</p>
               <p className="text-forest pt-1">Once toggled in the console, native popup authentication will automatically engage.</p>

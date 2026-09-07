@@ -10,7 +10,7 @@ import {
   query,
   addDoc,
 } from "firebase/firestore";
-import { signInWithPopup } from "firebase/auth";
+import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
 import { db, auth, googleProvider, appleProvider } from "../lib/firebase";
 import { UserAccount } from "../types";
 
@@ -232,13 +232,141 @@ export interface SocialAuthResponse {
   provider?: "google" | "apple";
 }
 
+export interface SocialAuthOptions {
+  onClosedImmediate?: () => void;
+}
+
+/**
+ * Executes a Firebase signInWithPopup operation while actively monitoring
+ * the popup window handle and window focus.
+ *
+ * Browsers and Firebase SDK can take several seconds to detect that a popup
+ * was closed by the user. By intercepting window.open to obtain the popup handle
+ * and checking `popup.closed` with high-frequency checks (80ms) alongside window focus
+ * events, we immediately detect closure the instant the user closes the popup browser.
+ */
+async function executePopupWithInstantCloseDetection<T>(
+  action: () => Promise<T>,
+  options?: SocialAuthOptions
+): Promise<T> {
+  if (typeof window === "undefined") {
+    return action();
+  }
+
+  let capturedPopup: Window | null = null;
+  const originalOpen = window.open;
+
+  // Intercept window.open synchronously to capture the popup window reference
+  window.open = function (...args: any[]) {
+    const win = originalOpen.apply(window, args as any);
+    if (win) {
+      capturedPopup = win;
+    }
+    return win;
+  };
+
+  let isSettled = false;
+  let intervalId: any = null;
+  let focusListener: (() => void) | null = null;
+  let unsubscribeAuth: (() => void) | null = null;
+  let authSucceeded = false;
+
+  const cleanup = () => {
+    isSettled = true;
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    if (focusListener) {
+      window.removeEventListener("focus", focusListener);
+      focusListener = null;
+    }
+    if (unsubscribeAuth) {
+      unsubscribeAuth();
+      unsubscribeAuth = null;
+    }
+    if (window.open !== originalOpen) {
+      window.open = originalOpen;
+    }
+  };
+
+  try {
+    unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        authSucceeded = true;
+      }
+    });
+  } catch {
+    // Ignore if auth is unavailable
+  }
+
+  let actionPromise: Promise<T>;
+  try {
+    actionPromise = action();
+  } finally {
+    // Restore window.open immediately after synchronous call
+    setTimeout(() => {
+      if (window.open !== originalOpen) {
+        window.open = originalOpen;
+      }
+    }, 50);
+  }
+
+  const safeActionPromise = actionPromise
+    .then((res) => {
+      cleanup();
+      return res;
+    })
+    .catch((err) => {
+      cleanup();
+      throw err;
+    });
+
+  // Avoid unhandled rejection warning if the instantClosePromise wins
+  safeActionPromise.catch(() => {});
+
+  const instantClosePromise = new Promise<T>((_, reject) => {
+    const checkClosed = () => {
+      if (isSettled) return;
+      if (capturedPopup && capturedPopup.closed) {
+        // Wait 120ms to allow in-flight credential message to propagate if window closed on success
+        setTimeout(() => {
+          if (isSettled) return;
+          if (authSucceeded || auth.currentUser) return;
+
+          options?.onClosedImmediate?.();
+          cleanup();
+          const closedErr = new Error("auth/popup-closed-by-user");
+          (closedErr as any).code = "auth/popup-closed-by-user";
+          reject(closedErr);
+        }, 120);
+      }
+    };
+
+    // 1. High frequency polling (every 80ms)
+    intervalId = setInterval(checkClosed, 80);
+
+    // 2. When the user closes the popup window, the browser immediately focuses the main window
+    focusListener = () => {
+      setTimeout(checkClosed, 20);
+    };
+    window.addEventListener("focus", focusListener);
+  });
+
+  return Promise.race([safeActionPromise, instantClosePromise]);
+}
+
 /**
  * Executes real Google sign-in using Firebase Auth popup, falling back gracefully
  * if the provider is not enabled in Firebase Console.
+ * Automatically and immediately detects if the popup browser window was closed.
  */
-export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
+export async function signInWithGoogleService(options?: SocialAuthOptions): Promise<SocialAuthResponse> {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const result = await executePopupWithInstantCloseDetection(
+      () => signInWithPopup(auth, googleProvider),
+      options
+    );
     const fbUser = result.user;
 
     if (!fbUser.email) {
@@ -313,10 +441,14 @@ export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
 /**
  * Executes Apple sign-in using Firebase Auth popup, falling back gracefully
  * if the provider is not enabled in Firebase Console.
+ * Automatically and immediately detects if the popup browser window was closed.
  */
-export async function signInWithAppleService(): Promise<SocialAuthResponse> {
+export async function signInWithAppleService(options?: SocialAuthOptions): Promise<SocialAuthResponse> {
   try {
-    const result = await signInWithPopup(auth, appleProvider);
+    const result = await executePopupWithInstantCloseDetection(
+      () => signInWithPopup(auth, appleProvider),
+      options
+    );
     const fbUser = result.user;
 
     const email = fbUser.email || `${fbUser.uid}@privaterelay.appleid.com`;

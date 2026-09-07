@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { CheckCircle2, ShieldCheck, Eye, EyeOff, RefreshCw, AlertCircle, ArrowRight } from "lucide-react";
-import { doc, getDoc } from "firebase/firestore";
+import { CheckCircle2, ShieldCheck, Eye, EyeOff, RefreshCw, AlertCircle, ArrowRight, X } from "lucide-react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { FluxLogo } from "./Landing";
 import {
@@ -40,45 +40,67 @@ export default function Login() {
     setLoading(true);
 
     try {
+      // Ensure smooth perceived performance without micro-flicker
+      const minDelay = new Promise((resolve) => setTimeout(resolve, 650));
+
       let acc = findAccount(email);
-      if (!acc) {
-        // Query Firestore in real-time in case registered on another client
-        const snap = await getDoc(doc(db, "users", emailToDocId(email)));
-        if (snap.exists()) {
-          const data = snap.data();
-          acc = {
-            id: snap.id,
-            name: data.name || "User",
-            email: data.email || email,
-            password: data.password,
-            createdAt: data.createdAt || new Date().toISOString(),
-            sessionsCount: (data.sessionsCount || 0) + 1,
-            lastPasswordReset: data.lastPasswordReset,
-            provider: data.provider,
-            avatarUrl: data.avatarUrl,
-            firebaseUid: data.firebaseUid,
-          };
-        }
+      // Query Firestore in real-time in case registered on another client
+      const docRef = doc(db, "users", emailToDocId(email));
+      const [snap] = await Promise.all([
+        getDoc(docRef).catch(() => null),
+        minDelay,
+      ]);
+
+      if (snap && snap.exists()) {
+        const data = snap.data();
+        acc = {
+          id: snap.id,
+          name: data.name || "User",
+          email: data.email || email,
+          password: data.password,
+          createdAt: data.createdAt || new Date().toISOString(),
+          sessionsCount: (data.sessionsCount || 0) + 1,
+          lastPasswordReset: data.lastPasswordReset,
+          provider: data.provider,
+          avatarUrl: data.avatarUrl,
+          firebaseUid: data.firebaseUid,
+        };
       }
 
-      setLoading(false);
-
       if (!acc) {
+        setLoading(false);
         setErrorMsg("No account found with this email address. Please create an account or sign in with Google or Apple.");
         return;
       }
 
       if (acc.provider && !acc.password) {
+        setLoading(false);
         const providerName = acc.provider === "google" ? "Google" : "Apple";
         setErrorMsg(`This account was registered using ${providerName}. Please use the "${providerName}" button below to sign in.`);
         return;
       }
 
       if (acc.password && acc.password !== password) {
+        setLoading(false);
         setErrorMsg("Incorrect password. If you recently reset your password, please use your new password. Or use 'Forgot password?' to recover access.");
         return;
       }
 
+      // Record successful login in Firestore
+      try {
+        setDoc(
+          doc(db, "users", emailToDocId(email)),
+          {
+            lastLoginAt: new Date().toISOString(),
+            sessionsCount: (acc.sessionsCount || 0) + 1,
+          },
+          { merge: true }
+        ).catch(() => {});
+      } catch {
+        // ignore
+      }
+
+      setLoading(false);
       setDone(true);
     } catch (err) {
       setLoading(false);
@@ -93,7 +115,9 @@ export default function Login() {
 
     const lowerProvider = provider.toLowerCase() as "google" | "apple";
     const result =
-      provider === "Google" ? await signInWithGoogleService() : await signInWithAppleService();
+      provider === "Google"
+        ? await signInWithGoogleService({ onClosedImmediate: () => setLoading(false) })
+        : await signInWithAppleService({ onClosedImmediate: () => setLoading(false) });
     setLoading(false);
 
     if (result.success && result.user) {
@@ -156,36 +180,46 @@ export default function Login() {
 
             return (
               <div
-                className={`p-3 mb-4 rounded-lg text-xs flex items-start gap-2.5 animate-fade-up ${
+                className={`p-3 mb-4 rounded-lg text-xs flex items-start justify-between gap-2.5 animate-fade-up ${
                   isPopupClosed
                     ? "bg-amber-50 border border-amber-200 text-amber-900"
                     : "bg-red-50 border border-red-200 text-red-700"
                 }`}
               >
-                <AlertCircle
-                  className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
-                    isPopupClosed ? "text-amber-600" : "text-red-500"
-                  }`}
-                />
-                <div className="space-y-1">
-                  <p className="font-medium">{errorMsg}</p>
-                  {!isPopupClosed &&
-                    !errorMsg.includes("Firebase Auth:") &&
-                    !errorMsg.includes("Google") &&
-                    !errorMsg.includes("Apple") &&
-                    (errorMsg.toLowerCase().includes("password") ||
-                      errorMsg.toLowerCase().includes("credential") ||
-                      errorMsg.toLowerCase().includes("user")) && (
-                    <Link
-                      to="/reset-password"
-                      state={{ email }}
-                      className="inline-flex items-center gap-1 font-semibold text-red-800 hover:underline pt-0.5"
-                    >
-                      <span>Reset password for this account</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </Link>
-                  )}
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle
+                    className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                      isPopupClosed ? "text-amber-600" : "text-red-500"
+                    }`}
+                  />
+                  <div className="space-y-1">
+                    <p className="font-medium">{errorMsg}</p>
+                    {!isPopupClosed &&
+                      !errorMsg.includes("Firebase Auth:") &&
+                      !errorMsg.includes("Google") &&
+                      !errorMsg.includes("Apple") &&
+                      (errorMsg.toLowerCase().includes("password") ||
+                        errorMsg.toLowerCase().includes("credential") ||
+                        errorMsg.toLowerCase().includes("user")) && (
+                      <Link
+                        to="/reset-password"
+                        state={{ email }}
+                        className="inline-flex items-center gap-1 font-semibold text-red-800 hover:underline pt-0.5"
+                      >
+                        <span>Reset password for this account</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    )}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setErrorMsg(null)}
+                  className="text-dim hover:text-ink p-0.5 rounded transition-colors flex-shrink-0"
+                  aria-label="Dismiss error"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             );
           })()}
@@ -219,6 +253,8 @@ export default function Login() {
             /* Elegant CSS Shimmer Skeleton Screen during login verification */
             <AuthSkeleton
               type="login"
+              variant="plain"
+              showHeader={false}
               message={loadingMsg}
               submessage="Verifying credentials and preparing your session"
             />

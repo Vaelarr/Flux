@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Zap,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { FluxLogo } from "./Landing";
 import { analyzeNistPassword, generatePassphrase } from "../utils/security";
@@ -73,7 +74,9 @@ export default function Register() {
 
     const lowerProvider = provider.toLowerCase() as "google" | "apple";
     const res =
-      provider === "Google" ? await signInWithGoogleService() : await signInWithAppleService();
+      provider === "Google"
+        ? await signInWithGoogleService({ onClosedImmediate: () => setIsSubmitting(false) })
+        : await signInWithAppleService({ onClosedImmediate: () => setIsSubmitting(false) });
     setIsSubmitting(false);
 
     if (res.success && res.user) {
@@ -172,13 +175,6 @@ export default function Register() {
                 <span>Security: <strong className="text-forest">Protected</strong></span>
               </div>
             </div>
-          ) : isSubmitting ? (
-            /* Elegant CSS Shimmer Skeleton Screen during account registration */
-            <AuthSkeleton
-              type="register"
-              message={loadingMsg}
-              submessage="Setting up your secure profile and personal timeline"
-            />
           ) : (
             /* Create Account Form */
             <div className="panel p-6 sm:p-8">
@@ -191,31 +187,52 @@ export default function Register() {
                 </p>
               </div>
 
-              {errorMsg && (() => {
-                const isPopupClosed =
-                  errorMsg.toLowerCase().includes("closed") ||
-                  errorMsg.toLowerCase().includes("cancelled") ||
-                  errorMsg.toLowerCase().includes("blocked");
+              {isSubmitting ? (
+                /* Elegant CSS Shimmer Skeleton Screen during account registration */
+                <AuthSkeleton
+                  type="register"
+                  variant="plain"
+                  showHeader={false}
+                  message={loadingMsg}
+                  submessage="Setting up your secure profile and personal timeline"
+                />
+              ) : (
+                <>
+                  {errorMsg && (() => {
+                    const isPopupClosed =
+                      errorMsg.toLowerCase().includes("closed") ||
+                      errorMsg.toLowerCase().includes("cancelled") ||
+                      errorMsg.toLowerCase().includes("blocked");
 
-                return (
-                  <div
-                    className={`p-3 mb-4 rounded-lg text-xs flex items-start gap-2.5 animate-fade-up ${
-                      isPopupClosed
-                        ? "bg-amber-50 border border-amber-200 text-amber-900"
-                        : "bg-red-50 border border-red-200 text-red-700"
-                    }`}
-                  >
-                    <AlertCircle
-                      className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
-                        isPopupClosed ? "text-amber-600" : "text-red-500"
-                      }`}
-                    />
-                    <p className="font-medium">{errorMsg}</p>
-                  </div>
-                );
-              })()}
+                    return (
+                      <div
+                        className={`p-3 mb-4 rounded-lg text-xs flex items-start justify-between gap-2.5 animate-fade-up ${
+                          isPopupClosed
+                            ? "bg-amber-50 border border-amber-200 text-amber-900"
+                            : "bg-red-50 border border-red-200 text-red-700"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <AlertCircle
+                            className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                              isPopupClosed ? "text-amber-600" : "text-red-500"
+                            }`}
+                          />
+                          <p className="font-medium">{errorMsg}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setErrorMsg(null)}
+                          className="text-dim hover:text-ink p-0.5 rounded transition-colors flex-shrink-0"
+                          aria-label="Dismiss error"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })()}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+                  <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Full Name */}
                 <div>
                   <label className="block text-xs font-semibold text-dim tracking-wide uppercase mb-1.5">
@@ -365,6 +382,8 @@ export default function Register() {
                   </Link>
                 </p>
               </div>
+                </>
+              )}
             </div>
           )}
         </div>
