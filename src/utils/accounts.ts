@@ -286,13 +286,15 @@ export async function signInWithGoogleService(): Promise<SocialAuthResponse> {
 
     let message = errorMsg || "Failed to sign in with Google.";
 
+    const currentProjectId = (auth?.app?.options as any)?.projectId || "flux-4e159";
+    const currentHost = typeof window !== "undefined" ? window.location.hostname : "your domain";
+
     if (isPopupClosed) {
       message = "The Google sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
     } else if (errorCode === "auth/popup-blocked") {
       message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
     } else if (errorCode === "auth/unauthorized-domain") {
-      message =
-        "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
+      message = `Firebase Auth: "${currentHost}" is not an authorized domain for project "${currentProjectId}". In Firebase Console, select project "${currentProjectId}", go to Authentication > Settings > Authorized Domains, and add "${currentHost}".`;
     } else if (errorCode === "auth/network-request-failed") {
       message = "Network error connecting to Firebase Authentication.";
     } else {
@@ -357,13 +359,15 @@ export async function signInWithAppleService(): Promise<SocialAuthResponse> {
 
     let message = errorMsg || "Failed to sign in with Apple.";
 
+    const currentProjectId = (auth?.app?.options as any)?.projectId || "flux-4e159";
+    const currentHost = typeof window !== "undefined" ? window.location.hostname : "your domain";
+
     if (isPopupClosed) {
       message = "The Apple ID sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
     } else if (errorCode === "auth/popup-blocked") {
       message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
     } else if (errorCode === "auth/unauthorized-domain") {
-      message =
-        "Firebase Auth: This domain is not in Authorized Domains. In Firebase Console, go to Authentication > Settings > Authorized Domains and add this domain.";
+      message = `Firebase Auth: "${currentHost}" is not an authorized domain for project "${currentProjectId}". In Firebase Console, select project "${currentProjectId}", go to Authentication > Settings > Authorized Domains, and add "${currentHost}".`;
     } else if (errorCode === "auth/network-request-failed") {
       message = "Network error connecting to Firebase Authentication.";
     } else {

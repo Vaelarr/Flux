@@ -169,7 +169,13 @@ export default function Login() {
                 />
                 <div className="space-y-1">
                   <p className="font-medium">{errorMsg}</p>
-                  {!isPopupClosed && !errorMsg.includes("Google") && !errorMsg.includes("Apple") && (
+                  {!isPopupClosed &&
+                    !errorMsg.includes("Firebase Auth:") &&
+                    !errorMsg.includes("Google") &&
+                    !errorMsg.includes("Apple") &&
+                    (errorMsg.toLowerCase().includes("password") ||
+                      errorMsg.toLowerCase().includes("credential") ||
+                      errorMsg.toLowerCase().includes("user")) && (
                     <Link
                       to="/reset-password"
                       state={{ email }}
