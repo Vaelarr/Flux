@@ -15,21 +15,24 @@ try {
   // ignore
 }
 
+const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || {};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 const databaseId =
-  import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
+  env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
   firebaseConfigJson.firestoreDatabaseId ||
   "(default)";
+
 
 let db: Firestore;
 try {

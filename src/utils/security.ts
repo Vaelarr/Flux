@@ -17,16 +17,46 @@ const SEQUENTIAL_PATTERNS = [
   "9876", "8765", "7654", "6543", "5432", "4321"
 ];
 
-// Memorable word bank for secure passphrase generation
+// Memorable, gentle word bank for secure passphrase generation
 const WORDS = [
   "harbor", "cedar", "zenith", "orchard", "tempo", "cobalt", "river", "summit",
   "canvas", "breeze", "amber", "granite", "aurora", "meadow", "beacon", "solace",
-  "cypress", "ember", "velvet", "horizon", "timber", "cascade", "valley", "quartz"
+  "cypress", "ember", "velvet", "horizon", "timber", "cascade", "valley", "quartz",
+  "garden", "sunny", "silver", "willow", "coffee", "candle", "pebble", "maple"
 ];
+
+export interface WebmailInfo {
+  providerName: string;
+  inboxUrl: string;
+  isKnown: boolean;
+}
+
+/**
+ * Detects common webmail provider to give one-tap inbox access
+ */
+export function getWebmailInfo(email: string): WebmailInfo {
+  const domain = email.split("@")[1]?.toLowerCase() || "";
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    return { providerName: "Gmail", inboxUrl: "https://mail.google.com", isKnown: true };
+  }
+  if (domain === "outlook.com" || domain === "hotmail.com" || domain === "live.com" || domain === "msn.com") {
+    return { providerName: "Outlook", inboxUrl: "https://outlook.live.com", isKnown: true };
+  }
+  if (domain === "yahoo.com" || domain === "ymail.com" || domain === "rocketmail.com") {
+    return { providerName: "Yahoo Mail", inboxUrl: "https://mail.yahoo.com", isKnown: true };
+  }
+  if (domain === "icloud.com" || domain === "me.com" || domain === "mac.com") {
+    return { providerName: "iCloud Mail", inboxUrl: "https://www.icloud.com/mail", isKnown: true };
+  }
+  if (domain === "proton.me" || domain === "protonmail.com") {
+    return { providerName: "Proton Mail", inboxUrl: "https://mail.proton.me", isKnown: true };
+  }
+  return { providerName: "Email Inbox", inboxUrl: "", isKnown: false };
+}
 
 /**
  * Generates an effortless, high-entropy 3-word passphrase
- * e.g. "cobalt-orchard-beacon" (~45+ bits entropy, highly memorable, easy to type)
+ * e.g. "sunny-river-cabin-42" (~45+ bits entropy, highly memorable, easy to type)
  */
 export function generatePassphrase(): string {
   const chosen: string[] = [];

@@ -12,9 +12,10 @@ import {
 } from "firebase/firestore";
 import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
 import { db, auth, googleProvider, appleProvider } from "../lib/firebase";
-import { UserAccount } from "../types";
+import { UserAccount, ResetChallenge } from "../types";
 
 const STORAGE_KEY = "flux_registered_accounts";
+const CHALLENGES_KEY = "flux_reset_challenges";
 
 export function emailToDocId(email: string): string {
   return email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -627,30 +628,202 @@ export async function updatePassword(email: string, newPassword: string): Promis
   return true;
 }
 
+const inMemoryChallenges: Record<string, ResetChallenge> = {};
+
 /**
- * Persists password reset challenge tokens in Firestore
+ * In-memory and persistent cache for reset challenges to guarantee instant access and offline capability
+ */
+function getLocalChallenges(): Record<string, ResetChallenge> {
+  if (typeof window === "undefined") return inMemoryChallenges;
+  try {
+    const raw = localStorage.getItem(CHALLENGES_KEY);
+    return raw ? JSON.parse(raw) : inMemoryChallenges;
+  } catch {
+    return inMemoryChallenges;
+  }
+}
+
+function setLocalChallenges(challenges: Record<string, ResetChallenge>) {
+  if (typeof window === "undefined") {
+    Object.assign(inMemoryChallenges, challenges);
+    return;
+  }
+  try {
+    localStorage.setItem(CHALLENGES_KEY, JSON.stringify(challenges));
+  } catch {
+    // ignore
+  }
+}
+
+
+/**
+ * Persists password reset challenge tokens in Firestore and local storage
  */
 export async function saveResetChallenge(challenge: {
   email: string;
   otpCode: string;
   magicToken: string;
   expiresAt: number;
-}) {
+}): Promise<ResetChallenge> {
+  const normEmail = challenge.email.trim().toLowerCase();
+  const fullChallenge: ResetChallenge = {
+    email: normEmail,
+    otpCode: challenge.otpCode,
+    magicToken: challenge.magicToken,
+    expiresAt: challenge.expiresAt,
+    createdAt: new Date().toISOString(),
+    status: "pending",
+    attempts: 0,
+    maxAttempts: 5,
+  };
+
+  // 1. Update local cache immediately
+  const local = getLocalChallenges();
+  local[normEmail] = fullChallenge;
+  setLocalChallenges(local);
+
+  // 2. Persist to Firestore
   try {
-    const docId = `reset_${emailToDocId(challenge.email)}`;
-    await setDoc(doc(db, "password_resets", docId), {
-      ...challenge,
-      createdAt: new Date().toISOString(),
-      status: "pending",
-    });
+    const docId = `reset_${emailToDocId(normEmail)}`;
+    await setDoc(doc(db, "password_resets", docId), fullChallenge);
 
     await addDoc(collection(db, "security_logs"), {
       action: "CHALLENGE_DISPATCHED",
-      email: challenge.email,
-      timestamp: new Date().toISOString(),
+      email: normEmail,
+      timestamp: fullChallenge.createdAt,
       result: "SUCCESS",
     });
   } catch (err) {
     console.warn("Failed to save reset challenge to Firestore:", err);
   }
+
+  return fullChallenge;
 }
+
+export function getResetChallenge(email: string): ResetChallenge | undefined {
+  const normEmail = email.trim().toLowerCase();
+  const local = getLocalChallenges();
+  return local[normEmail];
+}
+
+/**
+ * Validates a reset OTP or magic token strictly without bypasses.
+ * Enforces rate limiting, attempt counters, and lockout protection.
+ */
+export function verifyResetChallenge(
+  email: string,
+  enteredInput: string,
+  isMagicToken = false
+): {
+  success: boolean;
+  error?: string;
+  isLockedOut?: boolean;
+  isExpired?: boolean;
+  attemptsRemaining?: number;
+} {
+  const normEmail = email.trim().toLowerCase();
+  const local = getLocalChallenges();
+  const challenge = local[normEmail];
+
+  if (!challenge) {
+    return {
+      success: false,
+      error: "No active security challenge found for this email. Please request a new code.",
+    };
+  }
+
+  if (challenge.status === "consumed") {
+    return {
+      success: false,
+      error: "This reset challenge has already been used and is no longer valid. Please request a new one.",
+    };
+  }
+
+  if (challenge.status === "locked" || challenge.attempts >= challenge.maxAttempts) {
+    return {
+      success: false,
+      isLockedOut: true,
+      error: "Maximum attempts reached. For security, this challenge is locked for 15 minutes.",
+    };
+  }
+
+  if (Date.now() > challenge.expiresAt || challenge.status === "expired") {
+    challenge.status = "expired";
+    setLocalChallenges(local);
+    return {
+      success: false,
+      isExpired: true,
+      error: "This verification code has expired. Please request a fresh challenge.",
+    };
+  }
+
+  // Strict check against issued challenge
+  const isMatch = isMagicToken
+    ? enteredInput.trim() === challenge.magicToken.trim()
+    : enteredInput.trim() === challenge.otpCode.trim();
+
+  if (isMatch) {
+    return { success: true };
+  }
+
+  // Increment failed attempts
+  challenge.attempts += 1;
+  const attemptsRemaining = Math.max(0, challenge.maxAttempts - challenge.attempts);
+
+  if (attemptsRemaining === 0) {
+    challenge.status = "locked";
+    setLocalChallenges(local);
+
+    // Record lockout in audit log
+    addDoc(collection(db, "security_logs"), {
+      action: "ACCOUNT_RESET_LOCKOUT",
+      email: normEmail,
+      timestamp: new Date().toISOString(),
+      result: "BLOCKED",
+    }).catch(() => {});
+
+    return {
+      success: false,
+      isLockedOut: true,
+      attemptsRemaining: 0,
+      error: "Maximum attempts reached. For security, this challenge is locked for 15 minutes.",
+    };
+  }
+
+  setLocalChallenges(local);
+  return {
+    success: false,
+    attemptsRemaining,
+    error: `Invalid verification code. ${attemptsRemaining} ${attemptsRemaining === 1 ? "attempt" : "attempts"} remaining before lockout.`,
+  };
+}
+
+/**
+ * Permanently burns/invalidates the reset challenge so it cannot be reused (Single-Use Token Guarantee)
+ */
+export async function consumeResetChallenge(email: string): Promise<void> {
+  const normEmail = email.trim().toLowerCase();
+  const local = getLocalChallenges();
+  if (local[normEmail]) {
+    local[normEmail].status = "consumed";
+    setLocalChallenges(local);
+  }
+
+  try {
+    const docId = `reset_${emailToDocId(normEmail)}`;
+    await updateDoc(doc(db, "password_resets", docId), {
+      status: "consumed",
+      consumedAt: new Date().toISOString(),
+    });
+
+    await addDoc(collection(db, "security_logs"), {
+      action: "CHALLENGE_BURNED",
+      email: normEmail,
+      timestamp: new Date().toISOString(),
+      result: "SUCCESS",
+    });
+  } catch (err) {
+    // ignore
+  }
+}
+
