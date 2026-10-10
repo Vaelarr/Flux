@@ -1,151 +1,228 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle2, ShieldCheck, X, Sparkles } from "lucide-react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react"
+
+import { CheckCircle2, ShieldCheck, X, AlertCircle } from "lucide-react"
 
 export interface ToastAction {
-  label: string;
-  onClick: () => void;
+  label: string
+
+  onClick: () => void
 }
 
 export interface ToastItem {
-  id: string;
-  title: string;
-  message?: string;
-  type?: "notice-green" | "success" | "security";
-  icon?: React.ReactNode;
-  duration?: number;
-  action?: ToastAction;
+  id: string
+
+  title: string
+
+  message?: string
+
+  type?: "notice-green" | "notice-red" | "success" | "security"
+
+  icon?: React.ReactNode
+
+  duration?: number
+
+  action?: ToastAction
 }
 
-export type ToastOptions = Omit<ToastItem, "id">;
+export type ToastOptions = Omit<ToastItem, "id">
 
 interface ToastContextValue {
-  showToast: (options: ToastOptions | string) => string;
-  dismissToast: (id: string) => void;
-  clearToasts: () => void;
-  toasts: ToastItem[];
+  showToast: (options: ToastOptions | string) => string
+
+  dismissToast: (id: string) => void
+
+  clearToasts: () => void
+
+  toasts: ToastItem[]
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+const ToastContext = createContext<ToastContextValue | null>(null)
 
 // Global event bus fallback so toast can be triggered anywhere
-type ToastListener = (toast: ToastOptions) => void;
-const listeners = new Set<ToastListener>();
+
+type ToastListener = (toast: ToastOptions) => void
+
+const listeners = new Set<ToastListener>()
 
 export const toast = {
-  success: (title: string, message?: string, options?: Partial<ToastOptions>) => {
+  success: (
+    title: string,
+    message?: string,
+    options?: Partial<ToastOptions>,
+  ) => {
     const payload: ToastOptions = {
       title,
+
       message,
+
       type: "notice-green",
+
       duration: 4500,
+
       ...options,
-    };
-    listeners.forEach((listener) => listener(payload));
+    }
+
+    listeners.forEach((listener) => listener(payload))
   },
-  security: (title: string, message?: string, options?: Partial<ToastOptions>) => {
+
+  security: (
+    title: string,
+    message?: string,
+    options?: Partial<ToastOptions>,
+  ) => {
     const payload: ToastOptions = {
       title,
+
       message,
+
       type: "security",
+
       duration: 5000,
+
       ...options,
-    };
-    listeners.forEach((listener) => listener(payload));
+    }
+
+    listeners.forEach((listener) => listener(payload))
   },
-};
+}
 
 export function useToast(): ToastContextValue {
-  const context = useContext(ToastContext);
+  const context = useContext(ToastContext)
+
   if (!context) {
-    throw new Error("useToast must be used within a ToastProvider");
+    throw new Error("useToast must be used within a ToastProvider")
   }
-  return context;
+
+  return context
 }
 
 /**
  * Single Toast Item presentation component styled with 'notice-green'
  */
+
 export interface ToastProps {
-  id?: string;
-  title: string;
-  message?: string;
-  type?: "notice-green" | "success" | "security";
-  icon?: React.ReactNode;
-  duration?: number;
-  action?: ToastAction;
-  onClose?: () => void;
-  className?: string;
+  id?: string
+
+  title: string
+
+  message?: string
+
+  type?: ToastItem["type"]
+
+  icon?: React.ReactNode
+
+  duration?: number
+
+  action?: ToastAction
+
+  onClose?: () => void
+
+  className?: string
 }
 
 export function Toast({
   title,
+
   message,
+
   type = "notice-green",
+
   icon,
+
   duration = 4500,
+
   action,
+
   onClose,
+
   className = "",
 }: ToastProps) {
-  const [paused, setPaused] = useState(false);
-  const [progress, setProgress] = useState(100);
-  const startTimeRef = useRef<number>(Date.now());
-  const remainingRef = useRef<number>(duration);
+  const [paused, setPaused] = useState(false)
+
+  const [progress, setProgress] = useState(100)
+
+  const startTimeRef = useRef<number>(Date.now())
+
+  const remainingRef = useRef<number>(duration)
 
   useEffect(() => {
-    if (!duration || duration <= 0 || !onClose) return;
+    if (!duration || duration <= 0 || !onClose) return
 
-    let animFrame: number;
-    startTimeRef.current = Date.now();
+    let animFrame: number
+
+    startTimeRef.current = Date.now()
 
     const tick = () => {
       if (!paused) {
-        const elapsed = Date.now() - startTimeRef.current;
-        const remaining = Math.max(0, remainingRef.current - elapsed);
-        const percent = (remaining / duration) * 100;
-        setProgress(percent);
+        const elapsed = Date.now() - startTimeRef.current
+
+        const remaining = Math.max(0, remainingRef.current - elapsed)
+
+        const percent = (remaining / duration) * 100
+
+        setProgress(percent)
 
         if (remaining <= 0) {
-          onClose();
-          return;
+          onClose()
+
+          return
         }
       }
-      animFrame = requestAnimationFrame(tick);
-    };
 
-    animFrame = requestAnimationFrame(tick);
+      animFrame = requestAnimationFrame(tick)
+    }
+
+    animFrame = requestAnimationFrame(tick)
 
     return () => {
-      cancelAnimationFrame(animFrame);
-    };
-  }, [duration, onClose, paused]);
+      cancelAnimationFrame(animFrame)
+    }
+  }, [duration, onClose, paused])
 
   const handleMouseEnter = () => {
-    setPaused(true);
-    const elapsed = Date.now() - startTimeRef.current;
-    remainingRef.current = Math.max(0, remainingRef.current - elapsed);
-  };
+    setPaused(true)
+
+    const elapsed = Date.now() - startTimeRef.current
+
+    remainingRef.current = Math.max(0, remainingRef.current - elapsed)
+  }
 
   const handleMouseLeave = () => {
-    startTimeRef.current = Date.now();
-    setPaused(false);
-  };
+    startTimeRef.current = Date.now()
+
+    setPaused(false)
+  }
 
   // Render proper icon based on toast intent
-  const defaultIcon =
-    type === "security" ? (
-      <ShieldCheck className="w-5 h-5 text-forest flex-shrink-0" />
-    ) : (
-      <CheckCircle2 className="w-5 h-5 text-forest flex-shrink-0 stroke-[2.2]" />
-    );
+
+  const isError = type === "notice-red"
+
+  const defaultIcon = isError ? (
+    <AlertCircle className="w-5 h-5 text-red-700 flex-shrink-0" />
+  ) : type === "security" ? (
+    <ShieldCheck className="w-5 h-5 text-forest flex-shrink-0" />
+  ) : (
+    <CheckCircle2 className="w-5 h-5 text-forest flex-shrink-0 stroke-[2.2]" />
+  )
 
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`notice notice-green animate-toast-in relative overflow-hidden shadow-[0_10px_25px_rgba(48,109,41,0.12)] border border-[rgba(48,109,41,0.24)] bg-[#F8FAF7]/98 backdrop-blur-md rounded-xl p-4 flex items-start gap-3 w-full pointer-events-auto transition-all ${className}`}
+      className={`notice ${
+        isError
+          ? "notice-red border-red-200 bg-red-50"
+          : "notice-green border-[rgba(48,109,41,0.24)] bg-[#F8FAF7]/98"
+      } animate-toast-in relative overflow-hidden shadow-[0_10px_25px_rgba(48,109,41,0.12)] border backdrop-blur-md rounded-xl p-4 flex items-start gap-3 w-full pointer-events-auto transition-all ${className}`}
     >
       {/* Icon */}
       <div className="pt-0.5">{icon || defaultIcon}</div>
@@ -165,8 +242,9 @@ export function Toast({
             <button
               type="button"
               onClick={() => {
-                action.onClick();
-                onClose?.();
+                action.onClick()
+
+                onClose?.()
               }}
               className="text-xs font-semibold text-forest underline underline-offset-3 hover:opacity-85 transition-opacity"
             >
@@ -198,20 +276,23 @@ export function Toast({
         </div>
       )}
     </div>
-  );
+  )
 }
 
 /**
  * Toast Container for rendering the stack of active toasts
  */
+
 export function ToastContainer({
   toasts,
+
   onDismiss,
 }: {
-  toasts: ToastItem[];
-  onDismiss: (id: string) => void;
+  toasts: ToastItem[]
+
+  onDismiss: (id: string) => void
 }) {
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0) return null
 
   return (
     <div
@@ -232,64 +313,80 @@ export function ToastContainer({
         />
       ))}
     </div>
-  );
+  )
 }
 
 /**
  * ToastProvider to manage toast state across routes and components
  */
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([])
 
   const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
 
   const clearToasts = useCallback(() => {
-    setToasts([]);
-  }, []);
+    setToasts([])
+  }, [])
 
   const showToast = useCallback(
     (options: ToastOptions | string): string => {
-      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
       const normalized: ToastItem =
         typeof options === "string"
           ? {
               id,
+
               title: options,
+
               type: "notice-green",
+
               duration: 4500,
             }
           : {
               ...options,
-              id,
-              type: options.type || "notice-green",
-              duration: options.duration !== undefined ? options.duration : 4500,
-            };
 
-      setToasts((prev) => [...prev, normalized]);
-      return id;
+              id,
+
+              type: options.type || "notice-green",
+
+              duration:
+                options.duration !== undefined ? options.duration : 4500,
+            }
+
+      setToasts((prev) => [...prev, normalized])
+
+      return id
     },
-    []
-  );
+
+    [],
+  )
 
   // Subscribe to external helper calls (toast.success / toast.security)
+
   useEffect(() => {
     const handleExternalToast: ToastListener = (toastOpts) => {
-      showToast(toastOpts);
-    };
-    listeners.add(handleExternalToast);
+      showToast(toastOpts)
+    }
+
+    listeners.add(handleExternalToast)
+
     return () => {
-      listeners.delete(handleExternalToast);
-    };
-  }, [showToast]);
+      listeners.delete(handleExternalToast)
+    }
+  }, [showToast])
 
   return (
-    <ToastContext.Provider value={{ showToast, dismissToast, clearToasts, toasts }}>
+    <ToastContext.Provider
+      value={{ showToast, dismissToast, clearToasts, toasts }}
+    >
       {children}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </ToastContext.Provider>
-  );
+  )
 }
 
-export default Toast;
+export default Toast

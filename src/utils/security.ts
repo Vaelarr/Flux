@@ -1,4 +1,6 @@
-import { PasswordStrengthResult, PasswordAnalysis, NistRequirement, SecuritySession } from "../types";
+import type { PasswordStrengthResult, PasswordAnalysis, NistRequirement } from "../types.js";
+
+export const MIN_PASSWORD_LENGTH = 15;
 
 // Common breached or highly predictable passwords (NIST SP 800-63B Section 5.1.1.2)
 const COMMON_BREACHED_PASSWORDS = new Set([
@@ -54,20 +56,12 @@ export function getWebmailInfo(email: string): WebmailInfo {
   return { providerName: "Email Inbox", inboxUrl: "", isKnown: false };
 }
 
-/**
- * Generates an effortless, high-entropy 3-word passphrase
- * e.g. "sunny-river-cabin-42" (~45+ bits entropy, highly memorable, easy to type)
- */
+/** Generate a password with browser cryptographic randomness. */
 export function generatePassphrase(): string {
-  const chosen: string[] = [];
-  while (chosen.length < 3) {
-    const word = WORDS[Math.floor(Math.random() * WORDS.length)];
-    if (!chosen.includes(word)) {
-      chosen.push(word);
-    }
-  }
-  const randomNum = Math.floor(10 + Math.random() * 89);
-  return `${chosen.join("-")}-${randomNum}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const words = Array.from(bytes.slice(0, 4), (byte) => WORDS[byte % WORDS.length]);
+  const suffix = Array.from(bytes.slice(4), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return words.join("-") + "-" + suffix;
 }
 
 /**
@@ -136,12 +130,12 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
       hasMinLength: false,
       isPassphrase: false,
       allCriticalMet: false,
-      tip: "Type at least 10 letters, or click 'Suggest a password' for an easy phrase.",
+      tip: "Type at least 15 letters, or click 'Suggest a password' for an easy phrase.",
       requirements: [
         {
           id: "length",
-          label: "At least 10 letters or numbers",
-          description: "Needs to be 10 characters or longer.",
+          label: "At least 15 letters or numbers",
+          description: "Needs to be 15 characters or longer.",
           met: false,
           status: "pending",
           critical: true,
@@ -178,7 +172,7 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
   const isBreached = COMMON_BREACHED_PASSWORDS.has(lower) ||
     lower.startsWith("password") ||
     lower.startsWith("123456") ||
-    lower === "admin123";
+    lower === "admin123" || /^(.)\1{4,}$/u.test(trimmed);
 
   // 2. Check Repetitive & Sequential
   const hasRep = hasRepeatedChars(trimmed);
@@ -189,7 +183,7 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
   const hasContextWords = hasContextSpecificTerms(trimmed, userEmail);
 
   // 4. Check Length
-  const hasMinLength = len >= 10;
+  const hasMinLength = len >= MIN_PASSWORD_LENGTH;
   const isPassphrase = (trimmed.includes("-") || trimmed.includes(" ")) && len >= 14;
 
   // 5. Entropy calculation
@@ -209,9 +203,9 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
   // Build granular easy-to-understand requirements
   const reqLength: NistRequirement = {
     id: "length",
-    label: "At least 10 letters or numbers",
-    description: len < 10
-      ? `Only ${len} of 10 letters entered so far. Add ${10 - len} more.`
+    label: "At least 15 letters or numbers",
+    description: len < MIN_PASSWORD_LENGTH
+      ? `Only ${len} of 15 letters entered so far. Add ${MIN_PASSWORD_LENGTH - len} more.`
       : `Good length! (${len} characters)`,
     met: hasMinLength,
     status: hasMinLength ? "pass" : "fail",
@@ -223,7 +217,7 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
     label: "Not an easily guessed password",
     description: isBreached
       ? "This password is too easy to guess. Please pick a different one."
-      : "Safe — not on any common password lists.",
+      : "Does not match the common passwords checked here.",
     met: !isBreached,
     status: isBreached ? "fail" : "pass",
     critical: true,
@@ -276,7 +270,7 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
   } else if (!hasMinLength) {
     label = "Weak";
     color = "#b4321e";
-    tip = `Please add ${10 - len} more characters to make it secure.`;
+    tip = `Please add ${MIN_PASSWORD_LENGTH - len} more characters to make it secure.`;
   } else if (hasRepetitiveOrSequential || hasContextWords) {
     label = "Fair";
     color = "#c26d18";
@@ -312,29 +306,3 @@ export function analyzeNistPassword(pw: string, userEmail?: string): PasswordAna
 /**
  * Mock active sessions for the user to review during reset
  */
-export const DEFAULT_ACTIVE_SESSIONS: SecuritySession[] = [
-  {
-    id: "sess_1",
-    device: "MacBook Pro 16\"",
-    browser: "Chrome 124 • macOS Sonoma",
-    location: "San Francisco, CA, US",
-    lastActive: "Active now",
-    isCurrent: true,
-  },
-  {
-    id: "sess_2",
-    device: "iPhone 15 Pro",
-    browser: "Safari Mobile • iOS 17.5",
-    location: "San Francisco, CA, US",
-    lastActive: "18 minutes ago",
-    isCurrent: false,
-  },
-  {
-    id: "sess_3",
-    device: "Dell XPS 13",
-    browser: "Firefox 125 • Windows 11",
-    location: "Austin, TX, US",
-    lastActive: "3 days ago",
-    isCurrent: false,
-  },
-];

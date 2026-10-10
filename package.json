@@ -8,11 +8,18 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "services:check": "tsx --env-file=.env.local scripts/check-services.ts",
+    "db:init": "tsx --env-file=.env.local scripts/db-init.ts",
+    "db:import": "tsx --env-file=.env.local scripts/import-accounts.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "firebase": "^12.18.0",
+    "jose": "^6.2.12",
     "lucide-react": "^1.41.0",
+    "nodemailer": "^10.0.16",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3"
@@ -20,12 +27,17 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
     "oxfmt": "^0.2.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vite": "^8.0.5"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6"
   }
 }

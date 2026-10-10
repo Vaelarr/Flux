@@ -27,7 +27,7 @@ body {
 
 /* Typography helpers */
 .font-heading { font-family: 'Fraunces', Georgia, serif; }
-.text-dim { color: rgba(13, 83, 14, 0.55); }
+.text-dim { color: #526747; }
 .text-sand { color: #8a7e50; }
 
 /* Dividers */
@@ -238,3 +238,8 @@ body {
   transition: text-decoration-color 0.15s ease;
 }
 .link:hover { text-decoration-color: #306D29; }
+
+:where(a, button, input, summary):focus-visible {
+  outline: 2px solid #306D29;
+  outline-offset: 3px;
+}

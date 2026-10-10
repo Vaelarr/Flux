@@ -1,7 +1,11 @@
 {
+  "installCommand": "npm ci",
+  "functions": {
+    "api/auth/[action].ts": { "maxDuration": 60 }
+  },
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api(?:/|$)).*)",
       "destination": "/index.html"
     }
   ]

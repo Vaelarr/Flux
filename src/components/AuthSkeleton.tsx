@@ -18,8 +18,8 @@ export default function AuthSkeleton({
   type = "login",
   variant = "plain",
   showHeader = false,
-  message = "Authenticating securely…",
-  submessage = "Verifying credentials and preparing your session",
+  message = "Signing in…",
+  submessage = "",
   className = "",
 }: AuthSkeletonProps) {
   const isRegister = type === "register";

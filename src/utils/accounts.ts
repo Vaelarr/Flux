@@ -1,227 +1,74 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  query,
-  addDoc,
-} from "firebase/firestore";
-import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
-import { db, auth, googleProvider, appleProvider } from "../lib/firebase";
-import { UserAccount, ResetChallenge } from "../types";
+import { signInWithPopup, onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
+import { auth, googleProvider, appleProvider } from "../lib/firebase";
+import type { UserAccount, SecuritySession } from "../types";
 
-const STORAGE_KEY = "flux_registered_accounts";
-const CHALLENGES_KEY = "flux_reset_challenges";
-
-export function emailToDocId(email: string): string {
-  return email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
-}
-
-let firestoreInitialized = false;
-
-// Purge any legacy demo or seeded accounts
-export function cleanupSeededAccounts() {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem("flux_demo_registered_accounts");
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const cleaned = parsed.filter(
-          (a) =>
-            a.id !== "usr-001" &&
-            a.id !== "usr-002" &&
-            a.email !== "demo@flux.social" &&
-            !(a.email === "atupaen@gmail.com" && a.password === "summit-cedar-river-88")
-        );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  // Delete seeded accounts from Firestore if present
-  try {
-    deleteDoc(doc(db, "users", "demo_flux_social")).catch(() => {});
-    deleteDoc(doc(db, "users", "usr-001")).catch(() => {});
-    deleteDoc(doc(db, "users", "usr-002")).catch(() => {});
-    getDoc(doc(db, "users", "atupaen_gmail_com"))
-      .then((snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data?.password === "summit-cedar-river-88" && (data?.id === "usr-001" || !data?.provider)) {
-            deleteDoc(doc(db, "users", "atupaen_gmail_com")).catch(() => {});
-          }
-        }
-      })
-      .catch(() => {});
-  } catch (e) {
-    // ignore
+export class AccountApiError extends Error {
+  constructor(message: string, public status: number, public details: Record<string, unknown> = {}) {
+    super(message);
   }
 }
 
-// Initialize background real-time sync with Firestore
-export function initFirestoreSync() {
-  if (firestoreInitialized || typeof window === "undefined") return;
-  firestoreInitialized = true;
-  cleanupSeededAccounts();
-
+async function request<T>(action: string, body?: Record<string, unknown>): Promise<T> {
+  let response: Response;
   try {
-    const usersCol = collection(db, "users");
-    // Listen for real-time changes
-    onSnapshot(
-      usersCol,
-      (snapshot) => {
-        const cloudAccounts: UserAccount[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          // Skip any seeded account remnants
-          if (
-            docSnap.id === "demo_flux_social" ||
-            docSnap.id === "usr-001" ||
-            docSnap.id === "usr-002" ||
-            data.email === "demo@flux.social" ||
-            (data.email === "atupaen@gmail.com" && data.password === "summit-cedar-river-88")
-          ) {
-            return;
-          }
-          cloudAccounts.push({
-            id: docSnap.id,
-            name: data.name || "User",
-            email: data.email || "",
-            password: data.password || "",
-            createdAt: data.createdAt || new Date().toISOString(),
-            sessionsCount: typeof data.sessionsCount === "number" ? data.sessionsCount : 1,
-            lastPasswordReset: data.lastPasswordReset,
-            provider: data.provider,
-            avatarUrl: data.avatarUrl,
-            firebaseUid: data.firebaseUid,
-          });
-        });
-
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudAccounts));
-        } catch (e) {
-          // ignore
-        }
-      },
-      (error) => {
-        // Soft fallback to offline local cache if network is temporarily interrupted
-        if (error?.code !== "unavailable") {
-          console.warn("Firestore snapshot sync status:", error?.message || error);
-        }
-      }
-    );
-  } catch {
-    // Soft fallback
-  }
-}
-
-// Auto trigger init
-if (typeof window !== "undefined") {
-  initFirestoreSync();
-}
-
-/**
- * Synchronous read from local cache (backed by real-time Firestore sync)
- */
-export function getRegisteredAccounts(): UserAccount[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.filter(
-        (a) =>
-          a.id !== "usr-001" &&
-          a.id !== "usr-002" &&
-          a.email !== "demo@flux.social" &&
-          !(a.email === "atupaen@gmail.com" && a.password === "summit-cedar-river-88")
-      );
-    }
-    return [];
-  } catch (err) {
-    console.warn("Could not read accounts from storage", err);
-    return [];
-  }
-}
-
-export function findAccount(email: string): UserAccount | undefined {
-  if (!email) return undefined;
-  const accounts = getRegisteredAccounts();
-  const lower = email.trim().toLowerCase();
-  return accounts.find((acc) => acc.email.toLowerCase() === lower);
-}
-
-/**
- * Upserts a social account (Google or Apple) into Firestore and local cache
- */
-export async function createOrUpdateSocialAccount(params: {
-  name: string;
-  email: string;
-  provider: "google" | "apple";
-  avatarUrl?: string;
-  firebaseUid?: string;
-}): Promise<UserAccount> {
-  const email = params.email.trim();
-  const docId = emailToDocId(email);
-  const now = new Date().toISOString();
-
-  const existing = findAccount(email);
-
-  const account: UserAccount = {
-    id: existing?.id || (params.firebaseUid ? `usr-${params.firebaseUid.slice(0, 10)}` : docId),
-    name: params.name || existing?.name || (params.provider === "apple" ? "Apple User" : "Google User"),
-    email,
-    createdAt: existing?.createdAt || now,
-    sessionsCount: (existing?.sessionsCount || 0) + 1,
-    provider: params.provider,
-    avatarUrl: params.avatarUrl || existing?.avatarUrl,
-    firebaseUid: params.firebaseUid || existing?.firebaseUid,
-  };
-
-  // 1. Update local storage
-  const current = getRegisteredAccounts().filter((a) => a.email.toLowerCase() !== email.toLowerCase());
-  current.push(account);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
-  } catch (e) {
-    // ignore
-  }
-
-  // 2. Persist to Firestore
-  try {
-    const userDocRef = doc(db, "users", docId);
-    await setDoc(
-      userDocRef,
-      {
-        ...account,
-        lastLoginAt: now,
-      },
-      { merge: true }
-    );
-
-    // Record security log
-    await addDoc(collection(db, "security_logs"), {
-      action: `SOCIAL_AUTH_${params.provider.toUpperCase()}`,
-      email,
-      timestamp: now,
-      result: "SUCCESS",
-      source: "web_auth",
+    response = await fetch("/api/auth/" + action, {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(25000),
     });
-  } catch (err) {
-    console.warn("Could not persist social account to Firestore:", err);
+  } catch {
+    throw new AccountApiError("Connection failed. Please try again.", 503);
   }
+  let result: Record<string, unknown>;
+  try {
+    result = await response.json();
+  } catch {
+    throw new AccountApiError("Account services are unavailable. Please try again later.", 503);
+  }
+  if (!response.ok) {
+    throw new AccountApiError(typeof result.error === "string" ? result.error : "Please try again.", response.status, result);
+  }
+  return result as T;
+}
 
-  return account;
+export async function createAccount(data: { name: string; email: string; password: string }): Promise<UserAccount> {
+  return (await request<{ user: UserAccount }>("register", data)).user;
+}
+
+export async function signInAccount(email: string, password: string, remember = false): Promise<UserAccount> {
+  return (await request<{ user: UserAccount }>("login", { email, password, remember })).user;
+}
+
+export async function currentAccount(): Promise<UserAccount | null> {
+  try { return (await request<{ user: UserAccount }>("session")).user; }
+  catch (error) { if (error instanceof AccountApiError && error.status === 401) return null; throw error; }
+}
+
+export async function signOutAccount() {
+  await request("logout", {});
+  await firebaseSignOut(auth).catch(() => {});
+}
+
+export interface ResetRequestResponse { success: boolean; expiresIn: number; retryAfter: number }
+export interface ResetVerificationResponse { success: boolean; email: string; expiresIn: number; sessions: SecuritySession[] }
+
+export function requestResetInstructions(email: string) {
+  return request<ResetRequestResponse>("reset-request", { email });
+}
+
+export function verifyResetCode(email: string, code: string) {
+  return request<ResetVerificationResponse>("reset-verify", { email, code });
+}
+
+export function verifyResetLink(token: string) {
+  return request<ResetVerificationResponse>("reset-verify", { token });
+}
+
+export function saveNewPassword(password: string, revokeSessions: boolean) {
+  return request<{ success: boolean; sessionsRevoked: boolean }>("reset-complete", { password, revokeSessions });
 }
 
 export interface SocialAuthResponse {
@@ -233,19 +80,13 @@ export interface SocialAuthResponse {
   provider?: "google" | "apple";
 }
 
-export interface SocialAuthOptions {
-  onClosedImmediate?: () => void;
-}
+export interface SocialAuthOptions { onClosedImmediate?: () => void }
 
-/**
- * Executes a Firebase signInWithPopup operation while actively monitoring
- * the popup window handle and window focus.
- *
- * Browsers and Firebase SDK can take several seconds to detect that a popup
- * was closed by the user. By intercepting window.open to obtain the popup handle
- * and checking `popup.closed` with high-frequency checks (80ms) alongside window focus
- * events, we immediately detect closure the instant the user closes the popup browser.
- */
+// Delete legacy browser copies of account credentials; only server records authenticate users.
+try {
+  for (const key of ["flux_registered_accounts", "flux_reset_challenges", "flux_demo_registered_accounts"]) localStorage.removeItem(key);
+} catch { /* Storage can be unavailable in private browsing. */ }
+
 async function executePopupWithInstantCloseDetection<T>(
   action: () => Promise<T>,
   options?: SocialAuthOptions
@@ -357,473 +198,30 @@ async function executePopupWithInstantCloseDetection<T>(
   return Promise.race([safeActionPromise, instantClosePromise]);
 }
 
-/**
- * Executes real Google sign-in using Firebase Auth popup, falling back gracefully
- * if the provider is not enabled in Firebase Console.
- * Automatically and immediately detects if the popup browser window was closed.
- */
-export async function signInWithGoogleService(options?: SocialAuthOptions): Promise<SocialAuthResponse> {
+
+async function signInWithProvider(provider: "google" | "apple", options?: SocialAuthOptions): Promise<SocialAuthResponse> {
   try {
     const result = await executePopupWithInstantCloseDetection(
-      () => signInWithPopup(auth, googleProvider),
-      options
+      () => signInWithPopup(auth, provider === "google" ? googleProvider : appleProvider), options,
     );
-    const fbUser = result.user;
-
-    if (!fbUser.email) {
-      return {
-        success: false,
-        error: "Google account did not provide an email address.",
-      };
+    const token = await result.user.getIdToken();
+    const { user } = await request<{ user: UserAccount }>("social", { token });
+    return { success: true, user };
+  } catch (error) {
+    const code = (error as { code?: string }).code || "";
+    const providerName = provider === "google" ? "Google" : "Apple";
+    if (code === "auth/configuration-not-found" || code === "auth/operation-not-allowed") {
+      return { success: false, needsFallback: true, provider };
     }
-
-    const account = await createOrUpdateSocialAccount({
-      name: fbUser.displayName || fbUser.email.split("@")[0],
-      email: fbUser.email,
-      provider: "google",
-      avatarUrl: fbUser.photoURL || undefined,
-      firebaseUid: fbUser.uid,
-    });
-
-    return { success: true, user: account };
-  } catch (error: any) {
-    const errorCode = error?.code || "";
-    const errorMsg = error?.message || "";
-
-    // When the provider is not yet activated in Firebase Console
-    if (
-      errorCode === "auth/configuration-not-found" ||
-      errorCode === "auth/operation-not-allowed" ||
-      errorMsg.includes("configuration-not-found") ||
-      errorMsg.includes("operation-not-allowed")
-    ) {
-      console.warn("Firebase Google Auth provider is not enabled in Firebase Console:", errorCode || errorMsg);
-      return {
-        success: false,
-        needsFallback: true,
-        provider: "google",
-      };
-    }
-
-    const isPopupClosed =
-      errorCode === "auth/popup-closed-by-user" ||
-      errorCode === "auth/cancelled-popup-request" ||
-      errorMsg.toLowerCase().includes("popup-closed-by-user") ||
-      errorMsg.toLowerCase().includes("closed by user") ||
-      errorMsg.toLowerCase().includes("popup was closed") ||
-      errorMsg.toLowerCase().includes("window closed");
-
-    let message = errorMsg || "Failed to sign in with Google.";
-
-    const currentProjectId = (auth?.app?.options as any)?.projectId || "flux-4e159";
-    const currentHost = typeof window !== "undefined" ? window.location.hostname : "your domain";
-
-    if (isPopupClosed) {
-      message = "The Google sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
-    } else if (errorCode === "auth/popup-blocked") {
-      message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
-    } else if (errorCode === "auth/unauthorized-domain") {
-      message = `Firebase Auth: "${currentHost}" is not an authorized domain for project "${currentProjectId}". In Firebase Console, select project "${currentProjectId}", go to Authentication > Settings > Authorized Domains, and add "${currentHost}".`;
-    } else if (errorCode === "auth/network-request-failed") {
-      message = "Network error connecting to Firebase Authentication.";
-    } else {
-      console.warn("Firebase Google Sign-In notice:", error);
-    }
-
-    return {
-      success: false,
-      error: message,
-      isPopupClosed,
-      provider: "google",
-    };
+    const closed = code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request";
+    const message = error instanceof AccountApiError ? error.message
+      : closed ? providerName + " sign-in was closed. Try again."
+      : code === "auth/popup-blocked" ? "Sign-in popup blocked. Allow popups and try again."
+      : code === "auth/unauthorized-domain" ? "Social sign-in is unavailable. Use email or try again later."
+      : "Could not sign in with " + providerName + ". Please try again.";
+    return { success: false, error: message, isPopupClosed: closed, provider };
   }
 }
 
-/**
- * Executes Apple sign-in using Firebase Auth popup, falling back gracefully
- * if the provider is not enabled in Firebase Console.
- * Automatically and immediately detects if the popup browser window was closed.
- */
-export async function signInWithAppleService(options?: SocialAuthOptions): Promise<SocialAuthResponse> {
-  try {
-    const result = await executePopupWithInstantCloseDetection(
-      () => signInWithPopup(auth, appleProvider),
-      options
-    );
-    const fbUser = result.user;
-
-    const email = fbUser.email || `${fbUser.uid}@privaterelay.appleid.com`;
-    const name = fbUser.displayName || "Apple User";
-
-    const account = await createOrUpdateSocialAccount({
-      name,
-      email,
-      provider: "apple",
-      firebaseUid: fbUser.uid,
-    });
-
-    return { success: true, user: account };
-  } catch (error: any) {
-    const errorCode = error?.code || "";
-    const errorMsg = error?.message || "";
-
-    // When the provider is not yet activated in Firebase Console
-    if (
-      errorCode === "auth/configuration-not-found" ||
-      errorCode === "auth/operation-not-allowed" ||
-      errorMsg.includes("configuration-not-found") ||
-      errorMsg.includes("operation-not-allowed")
-    ) {
-      console.warn("Firebase Apple Auth provider is not enabled in Firebase Console:", errorCode || errorMsg);
-      return {
-        success: false,
-        needsFallback: true,
-        provider: "apple",
-      };
-    }
-
-    const isPopupClosed =
-      errorCode === "auth/popup-closed-by-user" ||
-      errorCode === "auth/cancelled-popup-request" ||
-      errorMsg.toLowerCase().includes("popup-closed-by-user") ||
-      errorMsg.toLowerCase().includes("closed by user") ||
-      errorMsg.toLowerCase().includes("popup was closed") ||
-      errorMsg.toLowerCase().includes("window closed");
-
-    let message = errorMsg || "Failed to sign in with Apple.";
-
-    const currentProjectId = (auth?.app?.options as any)?.projectId || "flux-4e159";
-    const currentHost = typeof window !== "undefined" ? window.location.hostname : "your domain";
-
-    if (isPopupClosed) {
-      message = "The Apple ID sign-in browser popup was closed before finishing authentication. Please try again when you are ready.";
-    } else if (errorCode === "auth/popup-blocked") {
-      message = "The sign-in popup was blocked by your browser. Please allow popups for this site and try again.";
-    } else if (errorCode === "auth/unauthorized-domain") {
-      message = `Firebase Auth: "${currentHost}" is not an authorized domain for project "${currentProjectId}". In Firebase Console, select project "${currentProjectId}", go to Authentication > Settings > Authorized Domains, and add "${currentHost}".`;
-    } else if (errorCode === "auth/network-request-failed") {
-      message = "Network error connecting to Firebase Authentication.";
-    } else {
-      console.warn("Firebase Apple Sign-In notice:", error);
-    }
-
-    return {
-      success: false,
-      error: message,
-      isPopupClosed,
-      provider: "apple",
-    };
-  }
-}
-
-/**
- * Creates an account in both Firestore and local storage
- */
-export async function createAccount(data: { name: string; email: string; password?: string }): Promise<UserAccount> {
-  const email = data.email.trim();
-  const docId = emailToDocId(email);
-
-  const newAccount: UserAccount = {
-    id: docId,
-    name: data.name.trim() || email.split("@")[0],
-    email: email,
-    password: data.password,
-    createdAt: new Date().toISOString(),
-    sessionsCount: 1,
-  };
-
-  // 1. Update local storage immediately for snappy UI
-  const accounts = getRegisteredAccounts();
-  const lower = email.toLowerCase();
-  const existingIdx = accounts.findIndex((acc) => acc.email.toLowerCase() === lower);
-  let updated: UserAccount[];
-  if (existingIdx >= 0) {
-    updated = accounts.map((acc, i) => (i === existingIdx ? { ...acc, ...newAccount } : acc));
-  } else {
-    updated = [newAccount, ...accounts];
-  }
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch (err) {
-    console.warn("Failed to persist account locally", err);
-  }
-
-  // 2. Persist to Firestore Cloud Database
-  try {
-    const userDocRef = doc(db, "users", docId);
-    await setDoc(userDocRef, newAccount, { merge: true });
-
-    // Record in security audit log
-    await addDoc(collection(db, "security_logs"), {
-      action: "ACCOUNT_CREATED",
-      email: email,
-      timestamp: new Date().toISOString(),
-      result: "SUCCESS",
-      source: "web_registration",
-    });
-  } catch (err) {
-    console.warn("Failed to persist account to Firestore:", err);
-  }
-
-  return newAccount;
-}
-
-/**
- * Updates password in both Firestore and local storage
- */
-export async function updatePassword(email: string, newPassword: string): Promise<boolean> {
-  const docId = emailToDocId(email);
-  const now = new Date().toISOString();
-
-  // 1. Update local storage
-  const accounts = getRegisteredAccounts();
-  const lower = email.trim().toLowerCase();
-  const existingIdx = accounts.findIndex((acc) => acc.email.toLowerCase() === lower);
-
-  if (existingIdx === -1) {
-    await createAccount({
-      name: email.split("@")[0],
-      email,
-      password: newPassword,
-    });
-  } else {
-    accounts[existingIdx] = {
-      ...accounts[existingIdx],
-      password: newPassword,
-      lastPasswordReset: now,
-      sessionsCount: 1, // All prior sessions terminated
-    };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-    } catch (err) {
-      console.warn("Failed to update password locally", err);
-    }
-  }
-
-  // 2. Persist updated password and session termination to Firestore
-  try {
-    const userDocRef = doc(db, "users", docId);
-    await setDoc(
-      userDocRef,
-      {
-        password: newPassword,
-        lastPasswordReset: now,
-        sessionsCount: 1,
-      },
-      { merge: true }
-    );
-
-    // Record in Firestore security audit log
-    await addDoc(collection(db, "security_logs"), {
-      action: "PASSWORD_RESET_COMPLETED",
-      email: email,
-      timestamp: now,
-      result: "SUCCESS",
-      sessionsRevoked: true,
-    });
-  } catch (err) {
-    console.warn("Failed to persist password update to Firestore:", err);
-  }
-
-  return true;
-}
-
-const inMemoryChallenges: Record<string, ResetChallenge> = {};
-
-/**
- * In-memory and persistent cache for reset challenges to guarantee instant access and offline capability
- */
-function getLocalChallenges(): Record<string, ResetChallenge> {
-  if (typeof window === "undefined") return inMemoryChallenges;
-  try {
-    const raw = localStorage.getItem(CHALLENGES_KEY);
-    return raw ? JSON.parse(raw) : inMemoryChallenges;
-  } catch {
-    return inMemoryChallenges;
-  }
-}
-
-function setLocalChallenges(challenges: Record<string, ResetChallenge>) {
-  if (typeof window === "undefined") {
-    Object.assign(inMemoryChallenges, challenges);
-    return;
-  }
-  try {
-    localStorage.setItem(CHALLENGES_KEY, JSON.stringify(challenges));
-  } catch {
-    // ignore
-  }
-}
-
-
-/**
- * Persists password reset challenge tokens in Firestore and local storage
- */
-export async function saveResetChallenge(challenge: {
-  email: string;
-  otpCode: string;
-  magicToken: string;
-  expiresAt: number;
-}): Promise<ResetChallenge> {
-  const normEmail = challenge.email.trim().toLowerCase();
-  const fullChallenge: ResetChallenge = {
-    email: normEmail,
-    otpCode: challenge.otpCode,
-    magicToken: challenge.magicToken,
-    expiresAt: challenge.expiresAt,
-    createdAt: new Date().toISOString(),
-    status: "pending",
-    attempts: 0,
-    maxAttempts: 5,
-  };
-
-  // 1. Update local cache immediately
-  const local = getLocalChallenges();
-  local[normEmail] = fullChallenge;
-  setLocalChallenges(local);
-
-  // 2. Persist to Firestore
-  try {
-    const docId = `reset_${emailToDocId(normEmail)}`;
-    await setDoc(doc(db, "password_resets", docId), fullChallenge);
-
-    await addDoc(collection(db, "security_logs"), {
-      action: "CHALLENGE_DISPATCHED",
-      email: normEmail,
-      timestamp: fullChallenge.createdAt,
-      result: "SUCCESS",
-    });
-  } catch (err) {
-    console.warn("Failed to save reset challenge to Firestore:", err);
-  }
-
-  return fullChallenge;
-}
-
-export function getResetChallenge(email: string): ResetChallenge | undefined {
-  const normEmail = email.trim().toLowerCase();
-  const local = getLocalChallenges();
-  return local[normEmail];
-}
-
-/**
- * Validates a reset OTP or magic token strictly without bypasses.
- * Enforces rate limiting, attempt counters, and lockout protection.
- */
-export function verifyResetChallenge(
-  email: string,
-  enteredInput: string,
-  isMagicToken = false
-): {
-  success: boolean;
-  error?: string;
-  isLockedOut?: boolean;
-  isExpired?: boolean;
-  attemptsRemaining?: number;
-} {
-  const normEmail = email.trim().toLowerCase();
-  const local = getLocalChallenges();
-  const challenge = local[normEmail];
-
-  if (!challenge) {
-    return {
-      success: false,
-      error: "No active security challenge found for this email. Please request a new code.",
-    };
-  }
-
-  if (challenge.status === "consumed") {
-    return {
-      success: false,
-      error: "This reset challenge has already been used and is no longer valid. Please request a new one.",
-    };
-  }
-
-  if (challenge.status === "locked" || challenge.attempts >= challenge.maxAttempts) {
-    return {
-      success: false,
-      isLockedOut: true,
-      error: "Maximum attempts reached. For security, this challenge is locked for 15 minutes.",
-    };
-  }
-
-  if (Date.now() > challenge.expiresAt || challenge.status === "expired") {
-    challenge.status = "expired";
-    setLocalChallenges(local);
-    return {
-      success: false,
-      isExpired: true,
-      error: "This verification code has expired. Please request a fresh challenge.",
-    };
-  }
-
-  // Strict check against issued challenge
-  const isMatch = isMagicToken
-    ? enteredInput.trim() === challenge.magicToken.trim()
-    : enteredInput.trim() === challenge.otpCode.trim();
-
-  if (isMatch) {
-    return { success: true };
-  }
-
-  // Increment failed attempts
-  challenge.attempts += 1;
-  const attemptsRemaining = Math.max(0, challenge.maxAttempts - challenge.attempts);
-
-  if (attemptsRemaining === 0) {
-    challenge.status = "locked";
-    setLocalChallenges(local);
-
-    // Record lockout in audit log
-    addDoc(collection(db, "security_logs"), {
-      action: "ACCOUNT_RESET_LOCKOUT",
-      email: normEmail,
-      timestamp: new Date().toISOString(),
-      result: "BLOCKED",
-    }).catch(() => {});
-
-    return {
-      success: false,
-      isLockedOut: true,
-      attemptsRemaining: 0,
-      error: "Maximum attempts reached. For security, this challenge is locked for 15 minutes.",
-    };
-  }
-
-  setLocalChallenges(local);
-  return {
-    success: false,
-    attemptsRemaining,
-    error: `Invalid verification code. ${attemptsRemaining} ${attemptsRemaining === 1 ? "attempt" : "attempts"} remaining before lockout.`,
-  };
-}
-
-/**
- * Permanently burns/invalidates the reset challenge so it cannot be reused (Single-Use Token Guarantee)
- */
-export async function consumeResetChallenge(email: string): Promise<void> {
-  const normEmail = email.trim().toLowerCase();
-  const local = getLocalChallenges();
-  if (local[normEmail]) {
-    local[normEmail].status = "consumed";
-    setLocalChallenges(local);
-  }
-
-  try {
-    const docId = `reset_${emailToDocId(normEmail)}`;
-    await updateDoc(doc(db, "password_resets", docId), {
-      status: "consumed",
-      consumedAt: new Date().toISOString(),
-    });
-
-    await addDoc(collection(db, "security_logs"), {
-      action: "CHALLENGE_BURNED",
-      email: normEmail,
-      timestamp: new Date().toISOString(),
-      result: "SUCCESS",
-    });
-  } catch (err) {
-    // ignore
-  }
-}
-
+export function signInWithGoogleService(options?: SocialAuthOptions) { return signInWithProvider("google", options); }
+export function signInWithAppleService(options?: SocialAuthOptions) { return signInWithProvider("apple", options); }

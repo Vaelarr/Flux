@@ -61,22 +61,10 @@ export interface UserAccount {
   id: string;
   name: string;
   email: string;
-  password?: string;
   createdAt: string;
   sessionsCount: number;
   lastPasswordReset?: string;
   provider?: "password" | "google" | "apple";
   avatarUrl?: string;
   firebaseUid?: string;
-}
-
-export interface ResetChallenge {
-  email: string;
-  otpCode: string;
-  magicToken: string;
-  expiresAt: number;
-  createdAt: string;
-  status: "pending" | "consumed" | "expired" | "locked";
-  attempts: number;
-  maxAttempts: number;
 }
