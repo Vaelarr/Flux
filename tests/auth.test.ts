@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"
-import { createClient } from "@libsql/client"
+import { createClient, type TransactionMode } from "@libsql/client"
 import {
   AuthError,
   AuthService,
@@ -16,6 +16,7 @@ import {
   smtpOptions,
   type RecoveryEmail,
 } from "../server/mail.js"
+import { renderRecoveryEmail } from "../server/recovery-email.js"
 
 const PASSWORD = "Cedar-Lantern-82!river"
 const NEXT_PASSWORD = "Orchard-Timber-93!cloud"
@@ -218,6 +219,7 @@ test("recovery responses disclose no secrets or account existence; rate limits s
     )
     assert.equal(saved.includes(f.emails[0].code), false)
     assert.equal(saved.includes(f.emails[0].token), false)
+    assert.equal(saved.includes(f.emails[0].cancelToken), false)
     await rejectsStatus(
       f.freshService().requestReset({ email: "user@example.com" }, context),
       429,
@@ -681,6 +683,340 @@ test("HTTP API issues protected cookies, strips recovery secrets, rejects cross-
     )
     f.close()
   }
+})
+
+test("canceling a reset disables its code, link and issued grant while preserving passwords and sessions", async () => {
+  const f = await fixture()
+  try {
+    await f.register()
+    const signedIn = await f.service.login(
+      { email: "user@example.com", password: PASSWORD },
+      context,
+    )
+    await f.service.requestReset({ email: "user@example.com" }, context)
+    const mail = f.emails[0]
+    const proof = await f.service.verifyReset(
+      { email: mail.email, code: mail.code },
+      context,
+    )
+    assert.deepEqual(
+      await f.freshService().cancelReset({ token: mail.cancelToken }, context),
+      { success: true },
+    )
+    await rejectsStatus(
+      f.service.verifyReset({ token: mail.token }, context),
+      400,
+    )
+    await rejectsStatus(
+      f.service.verifyReset({ email: mail.email, code: mail.code }, context),
+      400,
+    )
+    await rejectsStatus(
+      f.service.completeReset({ password: NEXT_PASSWORD }, {
+        ...context,
+        resetGrant: proof.grant,
+      }),
+      400,
+    )
+    await rejectsStatus(
+      f.service.cancelReset({ token: mail.cancelToken }, context),
+      400,
+    )
+    assert.equal(
+      (await f.service.session({ ...context, sessionToken: signedIn.token }))
+        .user.email,
+      mail.email,
+    )
+    assert.equal(
+      (
+        await f.service.login(
+          { email: mail.email, password: PASSWORD },
+          context,
+        )
+      ).user.email,
+      mail.email,
+    )
+    assert.equal(
+      (
+        await f.database.execute(
+          "SELECT last_password_reset FROM flux_accounts",
+        )
+      ).rows[0].last_password_reset,
+      null,
+    )
+
+    f.advance(61000)
+    await f.service.requestReset({ email: mail.email }, context)
+    assert.equal(
+      (await f.service.verifyReset({ token: f.emails[1].token }, context))
+        .email,
+      mail.email,
+    )
+  } finally {
+    f.close()
+  }
+})
+
+test("cancellation rejects forged tokens and cannot authorize a reset or cancel another or newer request", async () => {
+  const f = await fixture()
+  try {
+    await f.register()
+    await f.register("other@example.com")
+    await f.service.requestReset({ email: "user@example.com" }, context)
+    await f.service.requestReset({ email: "other@example.com" }, context)
+    const [first, other] = f.emails
+    const [identifier, signature] = first.cancelToken.split(".")
+    const forgedSignature =
+      (signature[0] === "0" ? "1" : "0") + signature.slice(1)
+    for (const token of [
+      first.token,
+      identifier,
+      `${identifier}.${forgedSignature}`,
+      `${other.cancelToken.split(".")[0]}.${signature}`,
+      "x".repeat(1000),
+      null,
+    ]) {
+      await rejectsStatus(f.service.cancelReset({ token }, context), 400)
+    }
+    await rejectsStatus(
+      f.service.verifyReset({ token: first.cancelToken }, context),
+      400,
+    )
+    await rejectsStatus(
+      f.service.completeReset({ password: NEXT_PASSWORD }, {
+        ...context,
+        resetGrant: first.cancelToken,
+      }),
+      400,
+    )
+    assert.equal(
+      (await f.service.verifyReset({ token: first.token }, context)).email,
+      first.email,
+    )
+
+    f.advance(61000)
+    await f.service.requestReset({ email: first.email }, context)
+    await rejectsStatus(
+      f.service.cancelReset({ token: first.cancelToken }, context),
+      400,
+    )
+    assert.deepEqual(
+      await f.service.cancelReset({ token: f.emails[2].cancelToken }, context),
+      { success: true },
+    )
+    assert.equal(
+      (await f.service.verifyReset({ token: other.token }, context)).email,
+      other.email,
+    )
+  } finally {
+    f.close()
+  }
+})
+
+test("expired and completed requests cannot be canceled; locked requests can still be canceled", async () => {
+  const f = await fixture()
+  try {
+    await f.register()
+    await f.service.requestReset({ email: "user@example.com" }, context)
+    const expired = f.emails[0]
+    f.advance(RESET_TTL)
+    await rejectsStatus(
+      f.service.cancelReset({ token: expired.cancelToken }, context),
+      400,
+      "isExpired",
+    )
+
+    await f.service.requestReset({ email: expired.email }, context)
+    const completed = f.emails[1]
+    const proof = await f.service.verifyReset(
+      { token: completed.token },
+      context,
+    )
+    await f.service.completeReset({ password: NEXT_PASSWORD }, {
+      ...context,
+      resetGrant: proof.grant,
+    })
+    await rejectsStatus(
+      f.service.cancelReset({ token: completed.cancelToken }, context),
+      400,
+    )
+    assert.equal(
+      (
+        await f.service.login(
+          { email: completed.email, password: NEXT_PASSWORD },
+          context,
+        )
+      ).user.email,
+      completed.email,
+    )
+
+    f.advance(61000)
+    await f.service.requestReset({ email: completed.email }, context)
+    const locked = f.emails[2]
+    const wrong = locked.code === "111111" ? "222222" : "111111"
+    for (let attempt = 0; attempt < 5; attempt++)
+      await rejectsStatus(
+        f.service.verifyReset({ email: locked.email, code: wrong }, context),
+        400,
+      )
+    assert.deepEqual(
+      await f.service.cancelReset({ token: locked.cancelToken }, context),
+      { success: true },
+    )
+  } finally {
+    f.close()
+  }
+})
+
+test("cancellation prevents a password update already in progress from committing", async () => {
+  const f = await fixture()
+  const originalTransaction = f.database.transaction.bind(f.database)
+  let release: () => void = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered: () => void = () => {}
+  const enteredTransaction = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  try {
+    await f.register()
+    await f.service.requestReset({ email: "user@example.com" }, context)
+    const mail = f.emails[0]
+    const proof = await f.service.verifyReset({ token: mail.token }, context)
+    f.database.transaction = async (mode?: TransactionMode) => {
+      entered()
+      await released
+      return originalTransaction(mode)
+    }
+    const completion = f.service.completeReset({ password: NEXT_PASSWORD }, {
+      ...context,
+      resetGrant: proof.grant,
+    })
+    const rejectedCompletion = rejectsStatus(completion, 400)
+    await enteredTransaction
+    await f.service.cancelReset({ token: mail.cancelToken }, context)
+    release()
+    await rejectedCompletion
+    assert.equal(
+      (
+        await f.service.login(
+          { email: mail.email, password: PASSWORD },
+          context,
+        )
+      ).user.email,
+      mail.email,
+    )
+  } finally {
+    release()
+    f.database.transaction = originalTransaction
+    f.close()
+  }
+})
+
+test("HTTP cancellation requires a same-origin POST, never grants a session, and blocks replay", async () => {
+  const f = await fixture()
+  const server = createServer(
+    createAuthHandler(async () => ({
+      service: f.service,
+      secureCookies: true,
+    })),
+  )
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const port = (server.address() as { port: number }).port
+  const url = `http://127.0.0.1:${port}/api/auth/reset-cancel`
+  try {
+    await f.register()
+    await f.service.requestReset({ email: "user@example.com" }, context)
+    const mail = f.emails[0]
+    const scanner = await fetch(url + "?token=" + mail.cancelToken)
+    assert.equal(scanner.status, 405)
+    assert.equal(scanner.headers.get("allow"), "POST")
+    const post = (origin: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: origin },
+        body: JSON.stringify({ token: mail.cancelToken }),
+      })
+    assert.equal((await post("https://attacker.example")).status, 403)
+    assert.equal(
+      (await f.service.verifyReset({ token: mail.token }, context)).email,
+      mail.email,
+    )
+    const response = await post(`https://127.0.0.1:${port}`)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("set-cookie"), null)
+    assert.equal(response.headers.get("cache-control"), "no-store")
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer")
+    assert.deepEqual(await response.json(), { success: true })
+    assert.equal((await post(`https://127.0.0.1:${port}`)).status, 400)
+    await rejectsStatus(
+      f.service.verifyReset({ token: mail.token }, context),
+      400,
+    )
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    f.close()
+  }
+})
+
+test("cancellation rate limits persist across service restarts", async () => {
+  const f = await fixture()
+  try {
+    for (let attempt = 0; attempt < 30; attempt++)
+      await rejectsStatus(
+        f.service.cancelReset({ token: "invalid" }, context),
+        400,
+      )
+    await rejectsStatus(
+      f.freshService().cancelReset({ token: "invalid" }, context),
+      429,
+    )
+  } finally {
+    f.close()
+  }
+})
+
+test("recovery emails include distinct cancellation links and escape untrusted request details", () => {
+  const message: RecoveryEmail = {
+    email: "user@example.com",
+    code: "123456",
+    token: "reset-proof",
+    cancelToken: "cancellation-proof",
+    location: '<a href="https://attacker.example">City</a>',
+    device: "Browser & <script>alert('injection')</script>",
+    ip: '1.2.3.4"><img src=x>',
+    requestedAt: "Today <b>now</b>",
+  }
+  const { text, html } = renderRecoveryEmail(message, "https://flux.example")
+  for (const body of [text, html]) {
+    assert.ok(
+      body.includes("https://flux.example/reset-password#token=reset-proof"),
+    )
+    assert.ok(
+      body.includes(
+        "https://flux.example/reset-password/cancel#token=cancellation-proof",
+      ),
+    )
+    assert.ok(body.includes("https://flux.example/profile?tab=security"))
+    assert.ok(body.includes("15 minutes"))
+  }
+  assert.ok(text.includes("confirm cancellation"))
+  assert.ok(html.includes("This wasn't me — cancel request"))
+  assert.ok(
+    html.includes("&lt;script&gt;alert(&#39;injection&#39;)&lt;/script&gt;"),
+  )
+  assert.ok(html.includes("Browser &amp;"))
+  assert.ok(
+    html.includes("&lt;a href=&quot;https://attacker.example&quot;&gt;"),
+  )
+  for (const unsafe of [
+    "<script>",
+    '<a href="https://attacker.example">',
+    "<img",
+    "<b>now</b>",
+  ])
+    assert.equal(html.includes(unsafe), false)
 })
 
 test("Brevo SMTP requires TLS and configuration never permits an insecure public recovery URL", () => {

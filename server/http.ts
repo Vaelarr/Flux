@@ -77,6 +77,7 @@ const POST_ACTIONS = new Set([
   "logout",
   "social",
   "reset-request",
+  "reset-cancel",
   "reset-verify",
   "reset-complete",
   "update-profile",
@@ -205,6 +206,10 @@ export function createAuthHandler(factory: Factory) {
       }
       if (action === "reset-request") {
         send(200, await service.requestReset(body, context))
+        return
+      }
+      if (action === "reset-cancel") {
+        send(200, await service.cancelReset(body, context))
         return
       }
       if (action === "reset-verify") {

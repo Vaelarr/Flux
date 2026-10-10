@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
   User,
   Shield,
@@ -70,12 +70,17 @@ const AVATAR_PALETTES = [
 
 export default function Profile() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const reviewSecurity =
+    new URLSearchParams(location.search).get("tab") === "security"
   const { showToast } = useToast()
 
   // User state
   const [user, setUser] = useState<UserAccount | null>(null)
   const [pageLoading, setPageLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabType>("general")
+  const [activeTab, setActiveTab] = useState<TabType>(
+    reviewSecurity ? "security" : "general",
+  )
 
   // Easy Read Mode
   const [easyReadMode, setEasyReadMode] = useState(() => {
@@ -161,7 +166,7 @@ export default function Profile() {
         const account = await currentAccount()
         if (!active) return
         if (!account) {
-          navigate("/login", { replace: true })
+          navigate("/login", { replace: true, state: { reviewSecurity } })
           return
         }
         setUser(account)
@@ -172,14 +177,14 @@ export default function Profile() {
         setPageLoading(false)
       } catch {
         if (active) {
-          navigate("/login", { replace: true })
+          navigate("/login", { replace: true, state: { reviewSecurity } })
         }
       }
     })()
     return () => {
       active = false
     }
-  }, [navigate])
+  }, [navigate, reviewSecurity])
 
   // Load sessions when Security tab is selected
   useEffect(() => {

@@ -34,6 +34,10 @@ import { useToast } from "../components/Toast"
 export default function Login() {
   const location = useLocation()
   const navigate = useNavigate()
+  const destination =
+    location.state?.reviewSecurity === true
+      ? "/profile?tab=security"
+      : "/profile"
 
   const { showToast } = useToast()
 
@@ -118,7 +122,7 @@ export default function Login() {
         message: "Welcome back, " + account.name + ".",
         type: "notice-green",
       })
-      navigate("/profile", { replace: true })
+      navigate(destination, { replace: true })
     } catch (error) {
       setErrorMsg(
         error instanceof Error
@@ -157,7 +161,7 @@ export default function Login() {
       message: "Connected with Google.",
       type: "notice-green",
     })
-    navigate("/profile", { replace: true })
+    navigate(destination, { replace: true })
   }
 
   const handleGoogleClick = async () => {
@@ -288,7 +292,7 @@ export default function Login() {
 
               <div className="mt-6 pt-4 border-t border-sand flex flex-col gap-2">
                 <Link
-                  to="/profile"
+                  to={destination}
                   className="btn btn-forest text-xs py-2.5 w-full flex items-center justify-center gap-1.5"
                 >
                   <span>Go to Account Profile</span>

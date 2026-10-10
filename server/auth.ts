@@ -374,6 +374,8 @@ export class AuthService {
           await this.options.mailer.send({
             email,
             token,
+            // A separately signed capability can only cancel this challenge.
+            cancelToken: tokenHash + "." + this.hash("cancel:" + tokenHash),
             code,
             location,
             device,
@@ -397,6 +399,32 @@ export class AuthService {
       const delay = (this.options.recoveryDelayMs ?? 600) - (Date.now() - start)
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
     }
+  }
+
+  async cancelReset(body: Record<string, unknown>, context: AuthContext) {
+    await this.rate("cancel-reset:" + context.ip, 30)
+    const token = typeof body.token === "string" ? body.token : ""
+    const parts =
+      token.length === 129
+        ? /^([a-f0-9]{64})\.([a-f0-9]{64})$/.exec(token)
+        : null
+    const unavailable = () =>
+      new AuthError(
+        400,
+        "This reset request has expired, already been used, or is no longer available.",
+        { isExpired: true },
+      )
+    if (!parts || !equalHash(parts[2], this.hash("cancel:" + parts[1])))
+      throw unavailable()
+
+    // Delete atomically so an issued reset grant cannot survive cancellation.
+    // The original password and signed-in sessions stay unchanged.
+    const result = await this.db.execute({
+      sql: "DELETE FROM flux_password_resets WHERE token_hash = ? AND expires_at > ? AND consumed_at IS NULL RETURNING user_id",
+      args: [parts[1], this.now()],
+    })
+    if (!result.rows.length) throw unavailable()
+    return { success: true }
   }
 
   private checkReset(row: Row | undefined) {

@@ -114,6 +114,10 @@ export function verifyResetLink(token: string) {
   return request<ResetVerificationResponse>("reset-verify", { token })
 }
 
+export function cancelResetRequest(token: string) {
+  return request<{ success: boolean }>("reset-cancel", { token })
+}
+
 export interface PasswordUpdateResponse {
   success: boolean
   sessionsRevoked: boolean
