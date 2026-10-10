@@ -1,12 +1,12 @@
-import { RefreshCw, Shield, Lock } from "lucide-react";
+import { RefreshCw, Shield, Lock } from "lucide-react"
 
 export interface AuthSkeletonProps {
-  type?: "login" | "register" | "generic";
-  variant?: "panel" | "plain";
-  showHeader?: boolean;
-  message?: string;
-  submessage?: string;
-  className?: string;
+  type?: "login" | "register" | "generic"
+  variant?: "panel" | "plain"
+  showHeader?: boolean
+  message?: string
+  submessage?: string
+  className?: string
 }
 
 /**
@@ -22,12 +22,12 @@ export default function AuthSkeleton({
   submessage = "",
   className = "",
 }: AuthSkeletonProps) {
-  const isRegister = type === "register";
-  const isPanel = variant === "panel";
+  const isRegister = type === "register"
+  const isPanel = variant === "panel"
 
   const containerClasses = isPanel
     ? `panel p-6 sm:p-8 animate-fade-up relative overflow-hidden ${className}`
-    : `animate-fade-up relative overflow-hidden ${className}`;
+    : `animate-fade-up relative overflow-hidden ${className}`
 
   return (
     <div
@@ -57,9 +57,13 @@ export default function AuthSkeleton({
         <div className="mb-5 p-3 rounded-lg border border-sand bg-sand/25 flex items-center gap-2.5">
           <RefreshCw className="w-4 h-4 text-forest animate-spin flex-shrink-0" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-forest leading-none">{message}</p>
+            <p className="text-xs font-semibold text-forest leading-none">
+              {message}
+            </p>
             {submessage && (
-              <p className="text-[11px] text-dim mt-1 leading-tight">{submessage}</p>
+              <p className="text-[11px] text-dim mt-1 leading-tight">
+                {submessage}
+              </p>
             )}
           </div>
         </div>
@@ -141,9 +145,8 @@ export default function AuthSkeleton({
           <div className="skeleton h-px flex-1 opacity-50" />
         </div>
 
-        {/* Social Buttons Skeleton (Google & Apple) */}
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="skeleton h-10 w-full rounded-md border border-sand/40" />
+        {/* Google Button Skeleton */}
+        <div>
           <div className="skeleton h-10 w-full rounded-md border border-sand/40" />
         </div>
       </div>
@@ -158,6 +161,5 @@ export default function AuthSkeleton({
         <div className="skeleton h-2.5 w-44 rounded" />
       </div>
     </div>
-  );
+  )
 }
-

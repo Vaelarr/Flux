@@ -1,6 +1,6 @@
 # Flux
 
-React, Vite and Tailwind. Accounts, sessions and recovery challenges live in Turso. Brevo sends password recovery emails from the server. Google and Apple use Firebase Auth for identity verification, with account storage and sessions in Turso.
+React, Vite and Tailwind. Accounts, sessions and recovery challenges live in Turso. Brevo sends password recovery emails from the server. Google uses Firebase Auth for identity verification, with account storage and sessions in Turso.
 
 ## Vercel configuration
 
@@ -40,7 +40,7 @@ npm run services:check
 
 ## Existing accounts
 
-The earlier demo used Firestore and browser storage. Those records do not move to Turso automatically. Do not trust or upload browser caches as accounts. If you need previous accounts, export them through a trusted administrator and import an array of objects containing `name`, `email`, `password` (legacy plaintext), and optional `createdAt`. Social records require `provider` (`google` or `apple`) and `firebaseUid` instead of a password.
+The earlier demo used Firestore and browser storage. Those records do not move to Turso automatically. Do not trust or upload browser caches as accounts. If you need previous accounts, export them through a trusted administrator and import an array of objects containing `name`, `email`, `password` (legacy plaintext), and optional `createdAt`. Social records require `provider` and `firebaseUid` instead of a password. Google sign-in is supported; legacy `apple` records can be imported for email recovery, but Apple sign-in is disabled.
 
 ```sh
 npm run db:import -- path/to/trusted-export.json
@@ -57,6 +57,6 @@ The first command validates the export. The second hashes passwords and inserts 
 - Password recovery returns the same response for matching and unknown accounts during normal delivery. Codes and links expire after 15 minutes; five wrong codes lock a challenge. Resending invalidates the previous challenge.
 - Only a verified recovery cookie can change a password. Completion consumes the challenge, and “Sign out other devices” deletes the account's active Flux sessions.
 - Write requests require JSON and reject a different browser origin. Rate limits persist in Turso across server instances.
-- Google/Apple tokens are verified server-side against the configured Firebase project's signing keys, audience, issuer and verified email. A matching email alone cannot link a password account to a social identity. Enable each provider and authorize your deployment domain in Firebase Auth. Use `FIREBASE_PROJECT_ID` plus matching public `VITE_FIREBASE_*` values to change projects.
+- Google tokens are verified server-side against the configured Firebase project's signing keys, audience, issuer and verified email. A matching email alone cannot link a password account to a social identity. Enable Google and authorize your deployment domain in Firebase Auth. Use `FIREBASE_PROJECT_ID` plus matching public `VITE_FIREBASE_*` values to change projects.
 
 References: [Turso TypeScript client](https://docs.turso.tech/sdk/ts/reference), [Brevo SMTP settings](https://developers.brevo.com/docs/smtp-integration), [Nodemailer TLS options](https://nodemailer.com/smtp), [Vercel Node.js functions](https://vercel.com/docs/functions/runtimes/node-js).

@@ -21,8 +21,11 @@ import { analyzeNistPassword, generatePassphrase } from "../utils/security"
 import {
   createAccount,
   signInWithGoogleService,
-  signInWithAppleService,
+  type GoogleAccountLink,
 } from "../utils/accounts"
+import type { UserAccount } from "../types"
+import GoogleAccountLinkModal from "../components/GoogleAccountLinkModal"
+import { normalizePhoneNumber } from "../utils/phone"
 
 import NistPasswordValidator from "../components/NistPasswordValidator"
 
@@ -44,6 +47,8 @@ export default function Register() {
   const [name, setName] = useState(location.state?.name ?? "")
 
   const [email, setEmail] = useState(location.state?.email ?? "")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [phoneTouched, setPhoneTouched] = useState(false)
 
   const [password, setPassword] = useState("")
 
@@ -63,15 +68,15 @@ export default function Register() {
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  const [socialModalState, setSocialModalState] = useState<{
-    isOpen: boolean
-
-    provider: "google" | "apple"
-  }>({
-    isOpen: false,
-
-    provider: "google",
-  })
+  const [isSocialModalOpen, setIsSocialModalOpen] = useState(false)
+  const [googleAccountLink, setGoogleAccountLink] =
+    useState<GoogleAccountLink | null>(null)
+  let phoneError = ""
+  try {
+    normalizePhoneNumber(phoneNumber)
+  } catch {
+    phoneError = "Enter a valid phone number."
+  }
 
   // NIST Password analysis in real-time
 
@@ -81,6 +86,7 @@ export default function Register() {
     name.trim().length >= 2 &&
     email.includes("@") &&
     nistAnalysis.allCriticalMet &&
+    !phoneError &&
     agreeTerms &&
     !isSubmitting
 
@@ -92,83 +98,79 @@ export default function Register() {
     setShowPassword(true)
   }
 
-  const handleSocialRegister = async (provider: "Google" | "Apple") => {
+  const finishGoogleSignIn = (user: UserAccount) => {
+    setGoogleAccountLink(null)
+    setPassword("")
+    navigate("/login", { replace: true, state: { email: user.email } })
+    showToast({
+      title: "Signed in",
+      message: "Connected with Google.",
+      type: "notice-green",
+    })
+  }
+
+  const handleGoogleRegister = async () => {
+    setPhoneTouched(true)
+    if (phoneError || !agreeTerms) return
     setErrorMsg(null)
 
-    setLoadingMsg(`Setting up account with ${provider}…`)
+    setLoadingMsg("Setting up account with Google…")
 
     setIsSubmitting(true)
 
-    const lowerProvider = provider.toLowerCase() as "google" | "apple"
-
-    const res =
-      provider === "Google"
-        ? await signInWithGoogleService({
-            onClosedImmediate: () => setIsSubmitting(false),
-          })
-        : await signInWithAppleService({
-            onClosedImmediate: () => setIsSubmitting(false),
-          })
+    const res = await signInWithGoogleService({ phoneNumber, remember: true })
 
     setIsSubmitting(false)
 
     if (res.success && res.user) {
-      const userEmail = res.user.email
-
-      setCreatedEmail(userEmail)
-
-      setAccountCreated(true)
-
-      showToast({
-        title: "Account ready",
-
-        message: `Welcome to Flux. Connected with ${provider}.`,
-
-        type: "notice-green",
-
-        duration: 5000,
-
-        action: {
-          label: "Sign in",
-
-          onClick: () =>
-            navigate("/login", {
-              state: { email: userEmail, fromRegistration: true },
-            }),
-        },
-      })
+      finishGoogleSignIn(res.user)
+    } else if (res.accountLink) {
+      setGoogleAccountLink(res.accountLink)
     } else if (res.needsFallback) {
-      setSocialModalState({
-        isOpen: true,
-
-        provider: lowerProvider,
-      })
+      setIsSocialModalOpen(true)
     } else {
-      setErrorMsg(res.error || `Failed to sign up with ${provider}.`)
+      setErrorMsg(res.error || "Failed to sign up with Google.")
     }
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!canSubmit) return;
-    setErrorMsg(null);
-    setLoadingMsg("Creating your account…");
-    setIsSubmitting(true);
+    event.preventDefault()
+    if (!canSubmit) return
+    setErrorMsg(null)
+    setLoadingMsg("Creating your account…")
+    setIsSubmitting(true)
     try {
-      const account = await createAccount({ name, email, password });
-      setCreatedEmail(account.email);
-      setPassword("");
-      setAccountCreated(true);
+      const account = await createAccount({
+        name,
+        email,
+        password,
+        phoneNumber,
+      })
+      setCreatedEmail(account.email)
+      setPassword("")
+      setAccountCreated(true)
       showToast({
-        title: "Account ready", message: "Welcome to Flux.", type: "notice-green",
-        action: { label: "Sign in", onClick: () => navigate("/login", { state: { email: account.email, fromRegistration: true } }) },
-      });
+        title: "Account ready",
+        message: "Welcome to Flux.",
+        type: "notice-green",
+        action: {
+          label: "Sign in",
+          onClick: () =>
+            navigate("/login", {
+              state: { email: account.email, fromRegistration: true },
+            }),
+        },
+      })
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Could not create your account. Please try again.");
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : "Could not create your account. Please try again.",
+      )
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   return (
     <div className="bg-cream min-h-screen flex flex-col text-forest">
@@ -336,6 +338,49 @@ export default function Register() {
                       />
                     </div>
 
+                    <div>
+                      <label
+                        htmlFor="signup-phone"
+                        className="block text-xs font-semibold text-dim tracking-wide uppercase mb-1.5"
+                      >
+                        Phone number{" "}
+                        <span className="font-normal normal-case tracking-normal">
+                          (optional)
+                        </span>
+                      </label>
+                      <input
+                        id="signup-phone"
+                        type="tel"
+                        autoComplete="tel"
+                        inputMode="tel"
+                        maxLength={40}
+                        value={phoneNumber}
+                        onChange={(event) => setPhoneNumber(event.target.value)}
+                        onBlur={() => setPhoneTouched(true)}
+                        placeholder="0912 345 6789 or +63 912 345 6789"
+                        className="input text-sm"
+                        aria-invalid={phoneTouched && !!phoneError}
+                        aria-describedby={
+                          phoneTouched && phoneError
+                            ? "phone-error"
+                            : "phone-help"
+                        }
+                      />
+                      {phoneTouched && phoneError ? (
+                        <p
+                          id="phone-error"
+                          role="alert"
+                          className="text-xs text-red-700 mt-1.5"
+                        >
+                          {phoneError}
+                        </p>
+                      ) : (
+                        <p id="phone-help" className="text-xs text-dim mt-1.5">
+                          Outside the Philippines? Include your country code.
+                        </p>
+                      )}
+                    </div>
+
                     {/* Password with live validation */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
@@ -436,20 +481,15 @@ export default function Register() {
                     </div>
 
                     {/* Social Buttons */}
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div>
                       <button
                         type="button"
-                        onClick={() => handleSocialRegister("Google")}
-                        className="btn btn-outline text-xs gap-2 w-full py-2.5"
+                        onClick={() => void handleGoogleRegister()}
+                        data-google-signin
+                        disabled={!agreeTerms || !!phoneError}
+                        className="btn btn-outline text-xs gap-2 w-full py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <GoogleIcon /> Google
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSocialRegister("Apple")}
-                        className="btn btn-outline text-xs gap-2 w-full py-2.5"
-                      >
-                        <AppleIcon /> Apple
+                        <GoogleIcon /> Continue with Google
                       </button>
                     </div>
                   </form>
@@ -460,18 +500,20 @@ export default function Register() {
         </div>
       </main>
 
+      {googleAccountLink && (
+        <GoogleAccountLinkModal
+          accountLink={googleAccountLink}
+          initialRemember={true}
+          onCancel={() => setGoogleAccountLink(null)}
+          onLinked={finishGoogleSignIn}
+        />
+      )}
       <SocialAuthModal
-        isOpen={socialModalState.isOpen}
-        provider={socialModalState.provider}
-        onClose={() =>
-          setSocialModalState((prev) => ({ ...prev, isOpen: false }))
-        }
+        isOpen={isSocialModalOpen}
+        onClose={() => setIsSocialModalOpen(false)}
         onRetry={() => {
-          setSocialModalState((prev) => ({ ...prev, isOpen: false }))
-
-          void handleSocialRegister(
-            socialModalState.provider === "google" ? "Google" : "Apple",
-          )
+          setIsSocialModalOpen(false)
+          void handleGoogleRegister()
         }}
       />
     </div>
@@ -497,14 +539,6 @@ function GoogleIcon() {
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
         fill="#EA4335"
       />
-    </svg>
-  )
-}
-
-function AppleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.35-.58.67-1.09 1.74-.95 2.77 1.01.08 2.05-.52 2.68-1.27z" />
     </svg>
   )
 }

@@ -1,9 +1,14 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import PasswordReset from "./pages/PasswordReset";
-import { ToastProvider } from "./components/Toast";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+
+import Landing from "./pages/Landing"
+
+import Login from "./pages/Login"
+
+import Register from "./pages/Register"
+
+import PasswordReset from "./pages/PasswordReset"
+
+import { ToastProvider } from "./components/Toast"
 
 export default function App() {
   return (
@@ -19,5 +24,5 @@ export default function App() {
         </Routes>
       </ToastProvider>
     </BrowserRouter>
-  );
+  )
 }

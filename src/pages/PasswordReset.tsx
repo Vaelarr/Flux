@@ -1,236 +1,334 @@
-import { useState, useRef, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useState, useRef, useEffect } from "react"
+import { Link, useNavigate, useLocation } from "react-router-dom"
 import {
-  CheckCircle2, Clock, Eye, EyeOff, Sparkles, Smartphone, Laptop,
-  ArrowRight, Mail, RefreshCw, Copy, Check, ExternalLink, ChevronDown, Glasses,
-} from "lucide-react";
-import { FluxLogo } from "./Landing";
-import type { ResetStep, SecuritySession } from "../types";
-import { analyzeNistPassword, generatePassphrase, maskEmail, getWebmailInfo } from "../utils/security";
+  CheckCircle2,
+  Clock,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Smartphone,
+  Laptop,
+  ArrowRight,
+  Mail,
+  RefreshCw,
+  Copy,
+  Check,
+  ExternalLink,
+  ChevronDown,
+  Glasses,
+} from "lucide-react"
+import { FluxLogo } from "./Landing"
+import type { ResetStep, SecuritySession } from "../types"
 import {
-  AccountApiError, requestResetInstructions, verifyResetCode, verifyResetLink, saveNewPassword,
+  analyzeNistPassword,
+  generatePassphrase,
+  maskEmail,
+  getWebmailInfo,
+} from "../utils/security"
+import {
+  AccountApiError,
+  requestResetInstructions,
+  verifyResetCode,
+  verifyResetLink,
+  saveNewPassword,
   type ResetVerificationResponse,
-} from "../utils/accounts";
-import NistPasswordValidator from "../components/NistPasswordValidator";
-import { useToast } from "../components/Toast";
+} from "../utils/accounts"
+import NistPasswordValidator from "../components/NistPasswordValidator"
+import { useToast } from "../components/Toast"
 
 const STEPS: { key: ResetStep; label: string; stepNumber: number }[] = [
   { key: "email", label: "Email", stepNumber: 1 },
   { key: "verification", label: "Verify", stepNumber: 2 },
   { key: "newpass", label: "Password", stepNumber: 3 },
-];
-const TOKEN_TTL = 15 * 60;
-const MAX_ATTEMPTS = 5;
-const messageOf = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
+]
+const TOKEN_TTL = 15 * 60
+const MAX_ATTEMPTS = 5
+const messageOf = (error: unknown) =>
+  error instanceof Error ? error.message : "Please try again."
 
 export default function PasswordReset() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { showToast } = useToast();
-  const fromSignup = location.state?.fromSignup === true;
-  const [linkToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("token") ||
-    new URLSearchParams(window.location.search).get("token") || "");
-  const linkRequest = useRef<Promise<ResetVerificationResponse> | null>(null);
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { showToast } = useToast()
+  const fromSignup = location.state?.fromSignup === true
+  const [linkToken] = useState(
+    () =>
+      new URLSearchParams(window.location.hash.slice(1)).get("token") ||
+      new URLSearchParams(window.location.search).get("token") ||
+      "",
+  )
+  const linkRequest = useRef<Promise<ResetVerificationResponse> | null>(null)
   const [easyReadMode, setEasyReadMode] = useState(() => {
-    try { return localStorage.getItem("flux_easy_read_mode") === "true"; } catch { return false; }
-  });
+    try {
+      return localStorage.getItem("flux_easy_read_mode") === "true"
+    } catch {
+      return false
+    }
+  })
   const toggleEasyReadMode = () => {
-    setEasyReadMode(!easyReadMode);
-    try { localStorage.setItem("flux_easy_read_mode", String(!easyReadMode)); } catch { /* Optional preference. */ }
-  };
-  const [step, setStep] = useState<ResetStep>("email");
-  const [email, setEmail] = useState(location.state?.email || "");
-  const [showFullEmail, setShowFullEmail] = useState(false);
-  const [code, setCode] = useState<string[]>(Array(6).fill(""));
-  const [inputMode, setInputMode] = useState<"split" | "single">("split");
-  const [failedAttempts, setFailedAttempts] = useState(0);
-  const [isLockedOut, setIsLockedOut] = useState(false);
-  const [verificationMethod, setVerificationMethod] = useState<"otp" | "magic_link">("otp");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showNew, setShowNew] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [copiedPassphrase, setCopiedPassphrase] = useState(false);
-  const [revokeAllSessions, setRevokeAllSessions] = useState(true);
-  const [sessionsRevoked, setSessionsRevoked] = useState(false);
-  const [showSessionsList, setShowSessionsList] = useState(false);
-  const [activeSessions, setActiveSessions] = useState<SecuritySession[]>([]);
-  const [loading, setLoading] = useState(Boolean(linkToken));
-  const [loadingLabel, setLoadingLabel] = useState(linkToken ? "Checking reset link\u2026" : "");
-  const [codeError, setCodeError] = useState("");
-  const [formError, setFormError] = useState("");
-  const [expiry, setExpiry] = useState(TOKEN_TTL);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const expired = expiry <= 0;
-  const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const singleCodeRef = useRef<HTMLInputElement>(null);
-  const [isTroubleshooterOpen, setIsTroubleshooterOpen] = useState(false);
-  const [isHelpAccordionOpen, setIsHelpAccordionOpen] = useState(false);
+    setEasyReadMode(!easyReadMode)
+    try {
+      localStorage.setItem("flux_easy_read_mode", String(!easyReadMode))
+    } catch {
+      /* Optional preference. */
+    }
+  }
+  const [step, setStep] = useState<ResetStep>("email")
+  const [email, setEmail] = useState(location.state?.email || "")
+  const [showFullEmail, setShowFullEmail] = useState(false)
+  const [code, setCode] = useState<string[]>(Array(6).fill(""))
+  const [inputMode, setInputMode] = useState<"split" | "single">("split")
+  const [failedAttempts, setFailedAttempts] = useState(0)
+  const [isLockedOut, setIsLockedOut] = useState(false)
+  const [verificationMethod, setVerificationMethod] =
+    useState<"otp" | "magic_link">("otp")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [copiedPassphrase, setCopiedPassphrase] = useState(false)
+  const [revokeAllSessions, setRevokeAllSessions] = useState(true)
+  const [sessionsRevoked, setSessionsRevoked] = useState(false)
+  const [showSessionsList, setShowSessionsList] = useState(false)
+  const [activeSessions, setActiveSessions] = useState<SecuritySession[]>([])
+  const [loading, setLoading] = useState(Boolean(linkToken))
+  const [loadingLabel, setLoadingLabel] = useState(
+    linkToken ? "Checking reset link\u2026" : "",
+  )
+  const [codeError, setCodeError] = useState("")
+  const [formError, setFormError] = useState("")
+  const [expiry, setExpiry] = useState(TOKEN_TTL)
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const expired = expiry <= 0
+  const codeRefs = useRef<(HTMLInputElement | null)[]>([])
+  const singleCodeRef = useRef<HTMLInputElement>(null)
+  const [isTroubleshooterOpen, setIsTroubleshooterOpen] = useState(false)
+  const [isHelpAccordionOpen, setIsHelpAccordionOpen] = useState(false)
 
   useEffect(() => {
-    if (!linkToken) return;
-    let active = true;
+    if (!linkToken) return
+    let active = true
     // Reuse the request when React checks effects twice in development.
-    linkRequest.current ??= verifyResetLink(linkToken);
-    window.history.replaceState(window.history.state, "", "/reset-password");
-    void linkRequest.current.then((result) => {
-      if (!active) return;
-      setEmail(result.email);
-      setActiveSessions(result.sessions);
-      setExpiry(result.expiresIn);
-      setVerificationMethod("magic_link");
-      setStep("newpass");
-    }).catch((error: unknown) => {
-      if (active) setFormError(messageOf(error));
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [linkToken]);
+    linkRequest.current ??= verifyResetLink(linkToken)
+    window.history.replaceState(window.history.state, "", "/reset-password")
+    void linkRequest.current
+      .then((result) => {
+        if (!active) return
+        setEmail(result.email)
+        setActiveSessions(result.sessions)
+        setExpiry(result.expiresIn)
+        setVerificationMethod("magic_link")
+        setStep("newpass")
+      })
+      .catch((error: unknown) => {
+        if (active) setFormError(messageOf(error))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [linkToken])
 
   useEffect(() => {
-    if (step !== "verification" && step !== "newpass") return;
+    if (step !== "verification" && step !== "newpass") return
     const timer = setInterval(() => {
-      setExpiry((value) => Math.max(0, value - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [step]);
+      setExpiry((value) => Math.max(0, value - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [step])
   useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setTimeout(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => clearTimeout(timer);
-  }, [resendCooldown]);
+    if (resendCooldown <= 0) return
+    const timer = setTimeout(
+      () => setResendCooldown((value) => Math.max(0, value - 1)),
+      1000,
+    )
+    return () => clearTimeout(timer)
+  }, [resendCooldown])
   useEffect(() => {
     if (step === "verification" && !loading) {
-      (inputMode === "split" ? codeRefs.current[0] : singleCodeRef.current)?.focus();
+      ;(inputMode === "split"
+        ? codeRefs.current[0]
+        : singleCodeRef.current
+      )?.focus()
     }
-  }, [step, inputMode, loading]);
+  }, [step, inputMode, loading])
 
-  const fmt = (seconds: number) => String(Math.floor(seconds / 60)).padStart(2, "0") + ":" +
-    String(seconds % 60).padStart(2, "0");
+  const fmt = (seconds: number) =>
+    String(Math.floor(seconds / 60)).padStart(2, "0") +
+    ":" +
+    String(seconds % 60).padStart(2, "0")
 
   const requestInstructions = async (resending = false) => {
-    if (loading || (resending && resendCooldown > 0)) return;
-    setFormError("");
-    setLoading(true);
-    setLoadingLabel("Sending instructions\u2026");
-    const cleanEmail = email.trim().toLowerCase();
+    if (loading || (resending && resendCooldown > 0)) return
+    setFormError("")
+    setLoading(true)
+    setLoadingLabel("Sending instructions\u2026")
+    const cleanEmail = email.trim().toLowerCase()
     try {
-      const result = await requestResetInstructions(cleanEmail);
-      setEmail(cleanEmail);
-      setCode(Array(6).fill(""));
-      setCodeError("");
-      setFailedAttempts(0);
-      setIsLockedOut(false);
-      setExpiry(result.expiresIn);
-      setResendCooldown(result.retryAfter);
-      setStep("verification");
-      if (resending) showToast({
-        title: "Check your email", message: "If an account matches, new instructions are on the way.", type: "notice-green",
-      });
+      const result = await requestResetInstructions(cleanEmail)
+      setEmail(cleanEmail)
+      setCode(Array(6).fill(""))
+      setCodeError("")
+      setFailedAttempts(0)
+      setIsLockedOut(false)
+      setExpiry(result.expiresIn)
+      setResendCooldown(result.retryAfter)
+      setStep("verification")
+      if (resending)
+        showToast({
+          title: "Check your email",
+          message: "If an account matches, new instructions are on the way.",
+          type: "notice-green",
+        })
     } catch (error) {
-      setFormError(messageOf(error));
-      if (error instanceof AccountApiError && typeof error.details.retryAfter === "number") {
-        setResendCooldown(error.details.retryAfter);
+      setFormError(messageOf(error))
+      if (
+        error instanceof AccountApiError &&
+        typeof error.details.retryAfter === "number"
+      ) {
+        setResendCooldown(error.details.retryAfter)
       }
-    } finally { setLoading(false); }
-  };
+    } finally {
+      setLoading(false)
+    }
+  }
   const handleEmailSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (email.trim()) void requestInstructions();
-  };
-  const handleResend = () => void requestInstructions(true);
+    event.preventDefault()
+    if (email.trim()) void requestInstructions()
+  }
+  const handleResend = () => void requestInstructions(true)
   const handleCodeChange = (index: number, value: string) => {
-    setCodeError("");
-    const digit = value.replace(/\D/g, "").slice(-1);
-    const next = [...code];
-    next[index] = digit;
-    setCode(next);
-    if (digit && index < 5) codeRefs.current[index + 1]?.focus();
-  };
+    setCodeError("")
+    const digit = value.replace(/\D/g, "").slice(-1)
+    const next = [...code]
+    next[index] = digit
+    setCode(next)
+    if (digit && index < 5) codeRefs.current[index + 1]?.focus()
+  }
   const handleSingleInputChange = (value: string) => {
-    setCodeError("");
-    const digits = value.replace(/\D/g, "").slice(0, 6);
-    setCode(Array.from({ length: 6 }, (_, index) => digits[index] || ""));
-  };
-  const handleCodeKey = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+    setCodeError("")
+    const digits = value.replace(/\D/g, "").slice(0, 6)
+    setCode(Array.from({ length: 6 }, (_, index) => digits[index] || ""))
+  }
+  const handleCodeKey = (
+    index: number,
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (event.key === "Backspace" && !code[index] && index > 0) {
-      const next = [...code]; next[index - 1] = ""; setCode(next);
-      codeRefs.current[index - 1]?.focus();
-    } else if (event.key === "ArrowLeft" && index > 0) codeRefs.current[index - 1]?.focus();
-    else if (event.key === "ArrowRight" && index < 5) codeRefs.current[index + 1]?.focus();
-  };
+      const next = [...code]
+      next[index - 1] = ""
+      setCode(next)
+      codeRefs.current[index - 1]?.focus()
+    } else if (event.key === "ArrowLeft" && index > 0)
+      codeRefs.current[index - 1]?.focus()
+    else if (event.key === "ArrowRight" && index < 5)
+      codeRefs.current[index + 1]?.focus()
+  }
   const pasteDigits = (value: string) => {
-    handleSingleInputChange(value);
-    if (inputMode === "split") codeRefs.current[Math.min(value.replace(/\D/g, "").length, 5)]?.focus();
-  };
+    handleSingleInputChange(value)
+    if (inputMode === "split")
+      codeRefs.current[Math.min(value.replace(/\D/g, "").length, 5)]?.focus()
+  }
   const handlePaste = (event: React.ClipboardEvent) => {
-    event.preventDefault();
-    pasteDigits(event.clipboardData.getData("text"));
-  };
+    event.preventDefault()
+    pasteDigits(event.clipboardData.getData("text"))
+  }
   const handleClipboardPaste = async () => {
-    try { pasteDigits(await navigator.clipboard.readText()); }
-    catch { setCodeError("Type the code or paste it into the code box."); }
-  };
-  const handleCodeSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (code.join("").length !== 6 || expired || isLockedOut || loading) return;
-    setLoading(true); setLoadingLabel("Checking code\u2026"); setCodeError(""); setFormError("");
     try {
-      const result = await verifyResetCode(email, code.join(""));
-      setEmail(result.email); setActiveSessions(result.sessions); setExpiry(result.expiresIn);
-      setVerificationMethod("otp"); setStep("newpass");
+      pasteDigits(await navigator.clipboard.readText())
+    } catch {
+      setCodeError("Type the code or paste it into the code box.")
+    }
+  }
+  const handleCodeSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (code.join("").length !== 6 || expired || isLockedOut || loading) return
+    setLoading(true)
+    setLoadingLabel("Checking code\u2026")
+    setCodeError("")
+    setFormError("")
+    try {
+      const result = await verifyResetCode(email, code.join(""))
+      setEmail(result.email)
+      setActiveSessions(result.sessions)
+      setExpiry(result.expiresIn)
+      setVerificationMethod("otp")
+      setStep("newpass")
     } catch (error) {
-      setCodeError(messageOf(error));
+      setCodeError(messageOf(error))
       if (error instanceof AccountApiError) {
         if (typeof error.details.attemptsRemaining === "number") {
-          setFailedAttempts(MAX_ATTEMPTS - error.details.attemptsRemaining);
+          setFailedAttempts(MAX_ATTEMPTS - error.details.attemptsRemaining)
         }
-        if (error.details.isLockedOut) setIsLockedOut(true);
-        if (error.details.isExpired) setExpiry(0);
+        if (error.details.isLockedOut) setIsLockedOut(true)
+        if (error.details.isExpired) setExpiry(0)
       }
-    } finally { setLoading(false); }
-  };
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const nistAnalysis = analyzeNistPassword(newPassword, email);
-  const match = confirmPassword.length > 0 && newPassword === confirmPassword;
-  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
-  const canSubmitPassword = nistAnalysis.allCriticalMet && match && !loading && !expired;
+  const nistAnalysis = analyzeNistPassword(newPassword, email)
+  const match = confirmPassword.length > 0 && newPassword === confirmPassword
+  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+  const canSubmitPassword =
+    nistAnalysis.allCriticalMet && match && !loading && !expired
   const handleSuggestPassphrase = () => {
-    const suggested = generatePassphrase();
-    setNewPassword(suggested); setConfirmPassword(suggested);
-    setShowNew(true); setShowConfirm(true); setCopiedPassphrase(false);
-  };
+    const suggested = generatePassphrase()
+    setNewPassword(suggested)
+    setConfirmPassword(suggested)
+    setShowNew(true)
+    setShowConfirm(true)
+    setCopiedPassphrase(false)
+  }
   const handleCopyPassphrase = async () => {
     try {
-      await navigator.clipboard.writeText(newPassword);
-      setCopiedPassphrase(true);
-      setTimeout(() => setCopiedPassphrase(false), 2500);
-    } catch { setFormError("Copy the password directly from the password box."); }
-  };
+      await navigator.clipboard.writeText(newPassword)
+      setCopiedPassphrase(true)
+      setTimeout(() => setCopiedPassphrase(false), 2500)
+    } catch {
+      setFormError("Copy the password directly from the password box.")
+    }
+  }
   const handlePassSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!canSubmitPassword) return;
-    setLoading(true); setLoadingLabel("Saving password\u2026"); setFormError("");
+    event.preventDefault()
+    if (!canSubmitPassword) return
+    setLoading(true)
+    setLoadingLabel("Saving password\u2026")
+    setFormError("")
     try {
-      const result = await saveNewPassword(newPassword, revokeAllSessions);
-      setSessionsRevoked(result.sessionsRevoked); setNewPassword(""); setConfirmPassword("");
-      setStep("success");
-      showToast({ title: "Password updated", message: "Sign in with your new password.", type: "security" });
+      const result = await saveNewPassword(newPassword, revokeAllSessions)
+      setSessionsRevoked(result.sessionsRevoked)
+      setNewPassword("")
+      setConfirmPassword("")
+      setStep("success")
+      showToast({
+        title: "Password updated",
+        message: "Sign in with your new password.",
+        type: "security",
+      })
     } catch (error) {
-      setFormError(messageOf(error));
-      if (error instanceof AccountApiError && error.details.isExpired) setExpiry(0);
-    } finally { setLoading(false); }
-  };
+      setFormError(messageOf(error))
+      if (error instanceof AccountApiError && error.details.isExpired)
+        setExpiry(0)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const expiryColor = expiry > 300 ? "#306D29" : expiry > 120 ? "#b45309" : "#b4321e";
-  const stepIdx = STEPS.findIndex((item) => item.key === step);
-  const webmail = getWebmailInfo(email);
+  const expiryColor =
+    expiry > 300 ? "#306D29" : expiry > 120 ? "#b45309" : "#b4321e"
+  const stepIdx = STEPS.findIndex((item) => item.key === step)
+  const webmail = getWebmailInfo(email)
   return (
     <div
       className={`bg-cream min-h-screen flex flex-col text-forest ${
         easyReadMode ? "text-base" : "text-sm"
       }`}
     >
-<header className="border-b border-sand bg-cream/90 backdrop-blur-xs sticky top-0 z-40">
+      <header className="border-b border-sand bg-cream/90 backdrop-blur-xs sticky top-0 z-40">
         <nav className="max-w-5xl mx-auto flex items-center justify-between px-4 sm:px-6 h-15">
           <FluxLogo />
           <div className="flex items-center gap-3 sm:gap-5">
@@ -304,7 +402,11 @@ export default function PasswordReset() {
                 : ""
             }`}
           >
-            {formError && <p role="alert" className="notice notice-red mb-4">{formError}</p>}
+            {formError && (
+              <p role="alert" className="notice notice-red mb-4">
+                {formError}
+              </p>
+            )}
             {step === "email" && (
               <div>
                 <h1 className="font-heading font-bold text-2xl sm:text-3xl mb-2">
@@ -393,9 +495,9 @@ export default function PasswordReset() {
                       used.
                     </p>
                     <p>
-                      Joined with Google or Apple?{" "}
+                      Joined with Google?{" "}
                       <Link to="/login" className="link">
-                        Sign in with that provider.
+                        Sign in with Google.
                       </Link>
                     </p>
                   </div>
@@ -445,10 +547,18 @@ export default function PasswordReset() {
                   </button>
                 </div>
                 {webmail.isKnown && (
-                  <a href={webmail.inboxUrl} target="_blank" rel="noopener noreferrer"
-                    className="btn btn-outline w-full mb-5">
-                    <Mail className="w-4 h-4" aria-hidden="true" /> Open {webmail.providerName}
-                    <ExternalLink className="w-3.5 h-3.5" aria-label="opens in a new tab" />
+                  <a
+                    href={webmail.inboxUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-outline w-full mb-5"
+                  >
+                    <Mail className="w-4 h-4" aria-hidden="true" /> Open{" "}
+                    {webmail.providerName}
+                    <ExternalLink
+                      className="w-3.5 h-3.5"
+                      aria-label="opens in a new tab"
+                    />
                   </a>
                 )}
 
@@ -671,9 +781,18 @@ export default function PasswordReset() {
                 {expired && (
                   <p role="alert" className="notice notice-red mb-4">
                     Reset expired.{" "}
-                    <button type="button" className="link" onClick={() => {
-                      setStep("email"); setFormError(""); setNewPassword(""); setConfirmPassword("");
-                    }}>Request new instructions</button>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => {
+                        setStep("email")
+                        setFormError("")
+                        setNewPassword("")
+                        setConfirmPassword("")
+                      }}
+                    >
+                      Request new instructions
+                    </button>
                   </p>
                 )}
                 <form onSubmit={handlePassSubmit} className="space-y-4">
@@ -834,7 +953,9 @@ export default function PasswordReset() {
                           {copiedPassphrase ? "Copied" : "Copy password"}
                         </button>
                       )}
-                      <p>Signing out ends active Flux sessions on your devices.</p>
+                      <p>
+                        Signing out ends active Flux sessions on your devices.
+                      </p>
                       <button
                         type="button"
                         onClick={() => setShowSessionsList(!showSessionsList)}
@@ -851,7 +972,9 @@ export default function PasswordReset() {
                         hidden={!showSessionsList}
                         className="space-y-2"
                       >
-                        {activeSessions.length === 0 && <li>No active sessions.</li>}
+                        {activeSessions.length === 0 && (
+                          <li>No active sessions.</li>
+                        )}
                         {activeSessions.map((session) => (
                           <li
                             key={session.id}
@@ -869,7 +992,10 @@ export default function PasswordReset() {
                               ·{" "}
                               {session.isCurrent
                                 ? "Current browser"
-                                : "Signed in " + new Date(session.lastActive).toLocaleDateString()}
+                                : "Signed in " +
+                                  new Date(
+                                    session.lastActive,
+                                  ).toLocaleDateString()}
                             </span>
                           </li>
                         ))}
@@ -923,7 +1049,9 @@ export default function PasswordReset() {
                         : "the 6-digit code"}
                       . The reset code and link have been invalidated.
                     </p>
-                    {sessionsRevoked && <p>Your other Flux sessions were signed out.</p>}
+                    {sessionsRevoked && (
+                      <p>Your other Flux sessions were signed out.</p>
+                    )}
                   </div>
                 </details>
                 <button
@@ -945,7 +1073,6 @@ export default function PasswordReset() {
               </div>
             )}
           </div>
-
         </div>
       </main>
     </div>

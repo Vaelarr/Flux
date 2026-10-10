@@ -1,12 +1,17 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router-dom"
 
 export interface FluxLogoProps {
-  size?: "sm" | "md" | "lg" | "xl";
-  showWordmark?: boolean;
-  to?: string;
-  className?: string;
-  markClassName?: string;
-  textClassName?: string;
+  size?: "sm" | "md" | "lg" | "xl"
+
+  showWordmark?: boolean
+
+  to?: string
+
+  className?: string
+
+  markClassName?: string
+
+  textClassName?: string
 }
 
 /**
@@ -15,6 +20,7 @@ export interface FluxLogoProps {
  * An organic squircle containing undulating river current waves that
  * harmonize into an iconic 'F' monogram with a water droplet accent.
  */
+
 export function FluxMark({ className = "w-8 h-8" }: { className?: string }) {
   return (
     <div
@@ -36,7 +42,13 @@ export function FluxMark({ className = "w-8 h-8" }: { className?: string }) {
           </linearGradient>
 
           {/* Luminous warm cream-to-sand stroke gradient */}
-          <linearGradient id="flux-flow-cream" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="flux-flow-cream"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="#FFFFFF" />
             <stop offset="55%" stopColor="#FBF5DD" />
             <stop offset="100%" stopColor="#E7E1B1" />
@@ -92,51 +104,62 @@ export function FluxMark({ className = "w-8 h-8" }: { className?: string }) {
         />
 
         {/* Thought ripple / droplet accent */}
-        <circle
-          cx="22.6"
-          cy="15.5"
-          r="1.3"
-          fill="#E7E1B1"
-          opacity="0.95"
-        />
+        <circle cx="22.6" cy="15.5" r="1.3" fill="#E7E1B1" opacity="0.95" />
       </svg>
     </div>
-  );
+  )
 }
 
 /**
  * Main Flux Brand Logo (Emblem + Editorial Fraunces Wordmark).
  */
+
 export default function FluxLogo({
   size = "md",
+
   showWordmark = true,
+
   to = "/",
+
   className = "",
+
   markClassName = "",
+
   textClassName = "",
 }: FluxLogoProps) {
   const sizeConfig = {
     sm: {
       mark: "w-7 h-7",
+
       text: "text-lg tracking-tight",
+
       gap: "gap-2",
     },
+
     md: {
       mark: "w-8.5 h-8.5",
+
       text: "text-[1.35rem] tracking-tight",
+
       gap: "gap-2.5",
     },
+
     lg: {
       mark: "w-11 h-11",
+
       text: "text-2xl tracking-tight",
+
       gap: "gap-3",
     },
+
     xl: {
       mark: "w-14 h-14",
+
       text: "text-3xl tracking-tight",
+
       gap: "gap-3.5",
     },
-  }[size];
+  }[size]
 
   const content = (
     <div
@@ -156,15 +179,19 @@ export default function FluxLogo({
         </span>
       )}
     </div>
-  );
+  )
 
   if (to) {
     return (
-      <Link to={to} className="inline-flex flex-shrink-0" aria-label="Flux Home">
+      <Link
+        to={to}
+        className="inline-flex flex-shrink-0"
+        aria-label="Flux Home"
+      >
         {content}
       </Link>
-    );
+    )
   }
 
-  return content;
+  return content
 }

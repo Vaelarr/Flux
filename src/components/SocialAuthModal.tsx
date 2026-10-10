@@ -5,19 +5,16 @@ interface SocialAuthModalProps {
   isOpen: boolean
   onClose: () => void
   onRetry: () => void
-  provider: "google" | "apple"
 }
 
 export default function SocialAuthModal({
   isOpen,
   onClose,
   onRetry,
-  provider,
 }: SocialAuthModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
   const onCloseRef = useRef(onClose)
-  const providerName = provider === "google" ? "Google" : "Apple"
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -80,7 +77,7 @@ export default function SocialAuthModal({
           id="social-auth-title"
           className="font-heading font-bold text-xl text-forest pr-4"
         >
-          {providerName} sign-in unavailable
+          Google sign-in unavailable
         </h2>
         <p id="social-auth-description" className="text-sm text-dim mt-2 mb-5">
           Try again, or continue with email.
@@ -92,7 +89,7 @@ export default function SocialAuthModal({
             onClick={onRetry}
             className="btn btn-forest w-full"
           >
-            Try {providerName} again
+            Try Google again
           </button>
           <button
             type="button"
