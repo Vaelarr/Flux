@@ -12,6 +12,7 @@ import {
 } from "./crypto.js"
 import type { RecoveryMailer } from "./mail.js"
 import type { VerifiedIdentity } from "./identity.js"
+import { resolveLocation, parseDeviceFromUserAgent } from "./geo.js"
 
 export class AuthError extends Error {
   constructor(
@@ -28,6 +29,11 @@ export interface AuthContext {
   userAgent: string
   sessionToken?: string
   resetGrant?: string
+  geoHeaders?: {
+    city?: string
+    region?: string
+    country?: string
+  }
 }
 
 interface AuthOptions {
@@ -357,7 +363,23 @@ export class AuthService {
           ],
         })
         try {
-          await this.options.mailer.send({ email, token, code })
+          const location = await resolveLocation({
+            ip: context.ip,
+            geoHeaders: context.geoHeaders,
+            timeZone:
+              typeof body.timeZone === "string" ? body.timeZone : undefined,
+          })
+          const device = parseDeviceFromUserAgent(context.userAgent)
+          const requestedAt = new Date(this.now()).toUTCString()
+          await this.options.mailer.send({
+            email,
+            token,
+            code,
+            location,
+            device,
+            ip: context.ip !== "unknown" ? context.ip : undefined,
+            requestedAt,
+          })
         } catch {
           await this.db.execute({
             sql: "DELETE FROM flux_password_resets WHERE token_hash = ?",

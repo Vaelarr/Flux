@@ -223,3 +223,73 @@ test("deleteAccount deletes account, sessions, and resets", async () => {
     f.close()
   }
 })
+
+test("resolveLocation and parseDeviceFromUserAgent correctly parse location and device", async () => {
+  const { resolveLocation, parseDeviceFromUserAgent } = await import(
+    "../server/geo.js"
+  )
+
+  // 1. Edge/CDN headers
+  const edgeLocation = await resolveLocation({
+    ip: "198.51.100.1",
+    geoHeaders: {
+      city: "Manila",
+      region: "Metro Manila",
+      country: "PH",
+    },
+  })
+  assert.equal(edgeLocation, "Manila, Metro Manila, PH")
+
+  // 2. Private IP with client timezone
+  const tzLocation = await resolveLocation({
+    ip: "127.0.0.1",
+    timeZone: "Asia/Manila",
+  })
+  assert.equal(tzLocation, "Manila, Asia (Local network)")
+
+  // 3. Device parsing
+  const winChrome = parseDeviceFromUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  )
+  assert.equal(winChrome, "Chrome on Windows")
+
+  const macSafari = parseDeviceFromUserAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+  )
+  assert.equal(macSafari, "Safari on macOS")
+
+  const iPhoneSafari = parseDeviceFromUserAgent(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+  )
+  assert.equal(iPhoneSafari, "Safari on iPhone")
+})
+
+test("password reset request includes machine location and device in recovery email", async () => {
+  const f = await fixture()
+  try {
+    const geoContext: AuthContext = {
+      ip: "198.51.100.5",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      geoHeaders: {
+        city: "Cebu City",
+        region: "Central Visayas",
+        country: "PH",
+      },
+    }
+
+    await f.service.requestReset(
+      { email: "profile-user@example.com", timeZone: "Asia/Manila" },
+      geoContext,
+    )
+
+    assert.equal(f.emails.length, 1)
+    const email = f.emails[0]
+    assert.equal(email.location, "Cebu City, Central Visayas, PH")
+    assert.equal(email.device, "Chrome on Windows")
+    assert.equal(email.ip, "198.51.100.5")
+    assert.ok(email.requestedAt)
+  } finally {
+    f.close()
+  }
+})

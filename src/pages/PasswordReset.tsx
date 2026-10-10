@@ -36,7 +36,13 @@ import {
 import NistPasswordValidator from "../components/NistPasswordValidator"
 import { useToast } from "../components/Toast"
 
-const STEPS: { key: ResetStep; label: string; stepNumber: number }[] = [
+interface StepItem {
+  key: ResetStep
+  label: string
+  stepNumber: number
+}
+
+const STEPS: StepItem[] = [
   { key: "email", label: "Email", stepNumber: 1 },
   { key: "verification", label: "Verify", stepNumber: 2 },
   { key: "newpass", label: "Password", stepNumber: 3 },

@@ -368,7 +368,12 @@ export default function Landing() {
 
 export { default as FluxLogo, FluxMark } from "../components/FluxLogo"
 
-function Avi({ name, size = "sm" }: { name: string; size?: "sm" | "md" }) {
+interface AviProps {
+  name: string
+  size?: "sm" | "md"
+}
+
+function Avi({ name, size = "sm" }: AviProps) {
   const initials = name
     .split(" ")
     .map((w) => w[0])

@@ -97,7 +97,13 @@ export interface ResetVerificationResponse {
 }
 
 export function requestResetInstructions(email: string) {
-  return request<ResetRequestResponse>("reset-request", { email })
+  let timeZone: string | undefined = undefined
+  try {
+    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    /* Optional client timezone */
+  }
+  return request<ResetRequestResponse>("reset-request", { email, timeZone })
 }
 
 export function verifyResetCode(email: string, code: string) {
@@ -108,15 +114,21 @@ export function verifyResetLink(token: string) {
   return request<ResetVerificationResponse>("reset-verify", { token })
 }
 
+export interface PasswordUpdateResponse {
+  success: boolean
+  sessionsRevoked: boolean
+}
+
 export function saveNewPassword(
   password: string,
   revokeSessions: boolean,
   keepCurrentSession = false,
 ) {
-  return request<{ success: boolean; sessionsRevoked: boolean }>(
-    "reset-complete",
-    { password, revokeSessions, keepCurrentSession },
-  )
+  return request<PasswordUpdateResponse>("reset-complete", {
+    password,
+    revokeSessions,
+    keepCurrentSession,
+  })
 }
 
 export async function updateUserProfile(data: {
@@ -133,10 +145,7 @@ export function changeUserPassword(data: {
   newPassword: string
   revokeOtherSessions?: boolean
 }) {
-  return request<{ success: boolean; sessionsRevoked: boolean }>(
-    "change-password",
-    data,
-  )
+  return request<PasswordUpdateResponse>("change-password", data)
 }
 
 export async function fetchUserSessions(): Promise<SecuritySession[]> {

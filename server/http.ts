@@ -134,6 +134,37 @@ export function createAuthHandler(factory: Factory) {
         throw new AuthError(403, "HTTPS is required.")
       const sessionName = secureCookies ? "__Host-flux_session" : "flux_session"
       const grantName = secureCookies ? "__Host-flux_reset" : "flux_reset"
+      const headerString = (name: string): string | undefined => {
+        const val = request.headers[name]
+        if (!val) return undefined
+        const raw = Array.isArray(val) ? val[0] : val
+        try {
+          return decodeURIComponent(raw)
+        } catch {
+          return raw
+        }
+      }
+
+      const geoCity =
+        headerString("x-vercel-ip-city") ||
+        headerString("cf-ipcity") ||
+        headerString("x-geo-city")
+      const geoRegion =
+        headerString("x-vercel-ip-country-region") || headerString("cf-region")
+      const geoCountry =
+        headerString("x-vercel-ip-country") ||
+        headerString("cf-ipcountry") ||
+        headerString("x-geo-country")
+
+      const geoHeaders =
+        geoCity || geoCountry
+          ? {
+              city: geoCity,
+              region: geoRegion,
+              country: geoCountry,
+            }
+          : undefined
+
       const forwarded = request.headers["x-forwarded-for"]
       const context: AuthContext = {
         ip:
@@ -143,6 +174,7 @@ export function createAuthHandler(factory: Factory) {
         userAgent: request.headers["user-agent"] || "Unknown browser",
         sessionToken: cookieValue(request, sessionName),
         resetGrant: cookieValue(request, grantName),
+        geoHeaders,
       }
 
       if (action === "register") {
