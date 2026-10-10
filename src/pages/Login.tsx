@@ -113,12 +113,12 @@ export default function Login() {
       setEmail(account.email)
       setPassword("")
       setDone(true)
-      navigate("/login", { replace: true, state: { email: account.email } })
       showToast({
         title: "Signed in",
         message: "Welcome back, " + account.name + ".",
         type: "notice-green",
       })
+      navigate("/profile", { replace: true })
     } catch (error) {
       setErrorMsg(
         error instanceof Error
@@ -152,12 +152,12 @@ export default function Login() {
     setEmail(user.email)
     setDone(true)
     setPassword("")
-    navigate("/login", { replace: true, state: { email: user.email } })
     showToast({
       title: "Signed in",
       message: "Connected with Google.",
       type: "notice-green",
     })
+    navigate("/profile", { replace: true })
   }
 
   const handleGoogleClick = async () => {
@@ -288,20 +288,28 @@ export default function Login() {
 
               <div className="mt-6 pt-4 border-t border-sand flex flex-col gap-2">
                 <Link
-                  to="/"
+                  to="/profile"
                   className="btn btn-forest text-xs py-2.5 w-full flex items-center justify-center gap-1.5"
                 >
-                  <span>Continue</span>
+                  <span>Go to Account Profile</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => void handleSwitchAccount()}
-                  disabled={loading}
-                  className="btn btn-outline text-xs py-2 w-full text-dim"
-                >
-                  Switch account
-                </button>
+                <div className="flex gap-2">
+                  <Link
+                    to="/"
+                    className="btn btn-outline text-xs py-2 flex-1 text-dim text-center"
+                  >
+                    Home
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void handleSwitchAccount()}
+                    disabled={loading}
+                    className="btn btn-outline text-xs py-2 flex-1 text-dim"
+                  >
+                    Switch account
+                  </button>
+                </div>
               </div>
             </div>
           ) : loading ? (

@@ -114,4 +114,8 @@ export interface UserAccount {
   avatarUrl?: string
 
   firebaseUid?: string
+
+  bio?: string
+
+  hasPassword?: boolean
 }

@@ -108,11 +108,52 @@ export function verifyResetLink(token: string) {
   return request<ResetVerificationResponse>("reset-verify", { token })
 }
 
-export function saveNewPassword(password: string, revokeSessions: boolean) {
+export function saveNewPassword(
+  password: string,
+  revokeSessions: boolean,
+  keepCurrentSession = false,
+) {
   return request<{ success: boolean; sessionsRevoked: boolean }>(
     "reset-complete",
-    { password, revokeSessions },
+    { password, revokeSessions, keepCurrentSession },
   )
+}
+
+export async function updateUserProfile(data: {
+  name?: string
+  phoneNumber?: string
+  bio?: string
+  avatarUrl?: string
+}): Promise<UserAccount> {
+  return (await request<{ user: UserAccount }>("update-profile", data)).user
+}
+
+export function changeUserPassword(data: {
+  currentPassword?: string
+  newPassword: string
+  revokeOtherSessions?: boolean
+}) {
+  return request<{ success: boolean; sessionsRevoked: boolean }>(
+    "change-password",
+    data,
+  )
+}
+
+export async function fetchUserSessions(): Promise<SecuritySession[]> {
+  return (await request<{ sessions: SecuritySession[] }>("get-sessions"))
+    .sessions
+}
+
+export function revokeUserSession(sessionId: string) {
+  return request<{ success: boolean }>("revoke-session", { sessionId })
+}
+
+export function revokeOtherUserSessions() {
+  return request<{ success: boolean }>("revoke-other-sessions", {})
+}
+
+export function deleteUserAccount(confirmation?: { password?: string }) {
+  return request<{ success: boolean }>("delete-account", confirmation || {})
 }
 
 export interface SocialAuthResponse {

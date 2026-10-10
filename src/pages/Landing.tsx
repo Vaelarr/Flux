@@ -1,8 +1,10 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 import { Link, useNavigate } from "react-router-dom"
 
 import FluxLogo, { FluxMark } from "../components/FluxLogo"
+import { currentAccount } from "../utils/accounts"
+import type { UserAccount } from "../types"
 
 const FEATURES = [
   {
@@ -55,8 +57,23 @@ const MOCK_POSTS = [
 
 export default function Landing() {
   const [email, setEmail] = useState("")
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null)
 
   const navigate = useNavigate()
+
+  useEffect(() => {
+    let active = true
+    void currentAccount()
+      .then((account) => {
+        if (active && account) {
+          setCurrentUser(account)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleJoin = (event: React.FormEvent) => {
     event.preventDefault()
@@ -81,13 +98,40 @@ export default function Landing() {
               Community
             </a>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/login" className="btn btn-ghost">
-              Sign in
-            </Link>
-            <Link to="/signup" className="btn btn-forest">
-              Join free
-            </Link>
+          <div className="flex items-center gap-2.5">
+            {currentUser ? (
+              <>
+                <Link
+                  to="/profile"
+                  className="flex items-center gap-2 px-2.5 py-1 rounded-md hover:bg-sand/30 transition-colors"
+                >
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs"
+                    style={{ background: "#0D530E", color: "#FBF5DD" }}
+                  >
+                    {currentUser.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className="text-xs font-semibold hidden sm:inline text-forest">
+                    {currentUser.name}
+                  </span>
+                </Link>
+                <Link
+                  to="/profile"
+                  className="btn btn-forest text-xs py-2 px-3.5"
+                >
+                  Account Profile
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/login" className="btn btn-ghost">
+                  Sign in
+                </Link>
+                <Link to="/signup" className="btn btn-forest">
+                  Join free
+                </Link>
+              </>
+            )}
           </div>
         </nav>
       </header>
@@ -111,23 +155,39 @@ export default function Landing() {
             Follow your people. Share what matters.
           </p>
 
-          <form
-            onSubmit={handleJoin}
-            className="flex flex-col sm:flex-row gap-2.5 max-w-sm"
-          >
-            <input
-              type="email"
-              aria-label="Email address"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              className="input flex-1"
-            />
-            <button type="submit" className="btn btn-forest px-5 text-center">
-              Join free →
-            </button>
-          </form>
+          {currentUser ? (
+            <div className="p-4 rounded-xl border border-sand bg-white shadow-xs max-w-sm space-y-3">
+              <p className="text-xs text-dim">
+                Signed in as{" "}
+                <strong className="text-forest">{currentUser.email}</strong>
+              </p>
+              <Link
+                to="/profile"
+                className="btn btn-forest w-full py-2.5 text-xs text-center flex items-center justify-center gap-2"
+              >
+                <span>Go to Account Profile & Settings</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          ) : (
+            <form
+              onSubmit={handleJoin}
+              className="flex flex-col sm:flex-row gap-2.5 max-w-sm"
+            >
+              <input
+                type="email"
+                aria-label="Email address"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="input flex-1"
+              />
+              <button type="submit" className="btn btn-forest px-5 text-center">
+                Join free →
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Right — live feed preview */}

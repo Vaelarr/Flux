@@ -1,7 +1,7 @@
 import { createClient, type Client } from "@libsql/client"
 
 export const SCHEMA = [
-  "CREATE TABLE IF NOT EXISTS flux_accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE, phone_number TEXT, password_hash TEXT, provider TEXT NOT NULL DEFAULT 'password', firebase_uid TEXT UNIQUE, avatar_url TEXT, created_at INTEGER NOT NULL, last_password_reset INTEGER)",
+  "CREATE TABLE IF NOT EXISTS flux_accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE, phone_number TEXT, password_hash TEXT, provider TEXT NOT NULL DEFAULT 'password', firebase_uid TEXT UNIQUE, avatar_url TEXT, bio TEXT, created_at INTEGER NOT NULL, last_password_reset INTEGER)",
   "CREATE TABLE IF NOT EXISTS flux_sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES flux_accounts(id) ON DELETE CASCADE, user_agent TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS flux_sessions_user ON flux_sessions(user_id)",
   "CREATE INDEX IF NOT EXISTS flux_sessions_expiry ON flux_sessions(expires_at)",
@@ -21,6 +21,9 @@ export async function initializeDatabase(database: Client) {
       await migration.execute(
         "ALTER TABLE flux_accounts ADD COLUMN phone_number TEXT",
       )
+    }
+    if (!columns.rows.some((column) => column.name === "bio")) {
+      await migration.execute("ALTER TABLE flux_accounts ADD COLUMN bio TEXT")
     }
     await migration.commit()
   } finally {

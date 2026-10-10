@@ -8,6 +8,8 @@ import Register from "./pages/Register"
 
 import PasswordReset from "./pages/PasswordReset"
 
+import Profile from "./pages/Profile"
+
 import { ToastProvider } from "./components/Toast"
 
 export default function App() {
@@ -20,6 +22,12 @@ export default function App() {
           <Route path="/signup" element={<Register />} />
           <Route path="/register" element={<Register />} />
           <Route path="/reset-password" element={<PasswordReset />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route
+            path="/settings"
+            element={<Navigate to="/profile" replace />}
+          />
+          <Route path="/account" element={<Navigate to="/profile" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ToastProvider>

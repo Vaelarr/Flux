@@ -79,6 +79,12 @@ const POST_ACTIONS = new Set([
   "reset-request",
   "reset-verify",
   "reset-complete",
+  "update-profile",
+  "change-password",
+  "get-sessions",
+  "revoke-session",
+  "revoke-other-sessions",
+  "delete-account",
 ])
 
 export function createAuthHandler(factory: Factory) {
@@ -175,6 +181,35 @@ export function createAuthHandler(factory: Factory) {
           "Set-Cookie",
           cookie(grantName, grant, secureCookies, result.expiresIn),
         )
+        send(200, result)
+        return
+      }
+      if (action === "update-profile") {
+        send(200, await service.updateProfile(body, context))
+        return
+      }
+      if (action === "change-password") {
+        send(200, await service.changePassword(body, context))
+        return
+      }
+      if (action === "get-sessions") {
+        send(200, await service.getSessions(context))
+        return
+      }
+      if (action === "revoke-session") {
+        send(200, await service.revokeSession(body, context))
+        return
+      }
+      if (action === "revoke-other-sessions") {
+        send(200, await service.revokeOtherSessions(context))
+        return
+      }
+      if (action === "delete-account") {
+        const result = await service.deleteAccount(body, context)
+        response.setHeader("Set-Cookie", [
+          cookie(sessionName, "", secureCookies, 0),
+          cookie(grantName, "", secureCookies, 0),
+        ])
         send(200, result)
         return
       }

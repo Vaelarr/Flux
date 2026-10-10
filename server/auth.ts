@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto"
-import type { Client, Row, Transaction } from "@libsql/client"
+import type { Client, InValue, Row, Transaction } from "@libsql/client"
 import { analyzeNistPassword } from "../src/utils/security.js"
 import { normalizePhoneNumber } from "../src/utils/phone.js"
 import type { UserAccount, SecuritySession } from "../src/types.js"
@@ -125,6 +125,8 @@ export class AuthService {
       sessionsCount: Number(row.session_count),
       provider: row.provider as UserAccount["provider"],
       avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
+      bio: row.bio ? String(row.bio) : undefined,
+      hasPassword: Boolean(row.password_hash),
       lastPasswordReset: row.last_password_reset
         ? new Date(Number(row.last_password_reset)).toISOString()
         : undefined,
@@ -530,15 +532,203 @@ export class AuthService {
         args: [this.now(), String(row.user_id)],
       })
       if (body.revokeSessions !== false) {
+        if (body.keepCurrentSession === true && context.sessionToken) {
+          const currentTokenHash = this.hash("session:" + context.sessionToken)
+          await transaction.execute({
+            sql: "DELETE FROM flux_sessions WHERE user_id = ? AND token_hash != ?",
+            args: [String(row.user_id), currentTokenHash],
+          })
+        } else {
+          await transaction.execute({
+            sql: "DELETE FROM flux_sessions WHERE user_id = ?",
+            args: [String(row.user_id)],
+          })
+        }
+      }
+      await transaction.commit()
+    } finally {
+      transaction.close()
+    }
+    const revoked =
+      body.revokeSessions !== false &&
+      !(body.keepCurrentSession === true && Boolean(context.sessionToken))
+    return { success: true, sessionsRevoked: revoked }
+  }
+
+  async updateProfile(body: Record<string, unknown>, context: AuthContext) {
+    const { user } = await this.session(context)
+    const updates: string[] = []
+    const args: InValue[] = []
+
+    if (body.name !== undefined) {
+      const name = typeof body.name === "string" ? body.name.trim() : ""
+      if (name.length < 2 || name.length > 100)
+        throw new AuthError(400, "Enter a name between 2 and 100 characters.")
+      updates.push("name = ?")
+      args.push(name)
+    }
+
+    if (body.phoneNumber !== undefined) {
+      let phoneNumber: string | null = null
+      if (body.phoneNumber !== "" && body.phoneNumber !== null) {
+        phoneNumber = phoneValue(body.phoneNumber)
+      }
+      updates.push("phone_number = ?")
+      args.push(phoneNumber)
+    }
+
+    if (body.bio !== undefined) {
+      const bio =
+        typeof body.bio === "string" ? body.bio.trim().slice(0, 300) : null
+      updates.push("bio = ?")
+      args.push(bio)
+    }
+
+    if (body.avatarUrl !== undefined) {
+      const avatarUrl =
+        typeof body.avatarUrl === "string"
+          ? body.avatarUrl.trim().slice(0, 500)
+          : null
+      updates.push("avatar_url = ?")
+      args.push(avatarUrl)
+    }
+
+    if (updates.length > 0) {
+      args.push(user.id)
+      await this.db.execute({
+        sql: `UPDATE flux_accounts SET ${updates.join(", ")} WHERE id = ?`,
+        args,
+      })
+    }
+
+    return { user: await this.account(user.id) }
+  }
+
+  async changePassword(body: Record<string, unknown>, context: AuthContext) {
+    const { user } = await this.session(context)
+    await this.rate("change-pass:" + user.id, 5)
+
+    const accountRow = (
+      await this.db.execute({
+        sql: "SELECT password_hash FROM flux_accounts WHERE id = ?",
+        args: [user.id],
+      })
+    ).rows[0]
+
+    if (!accountRow) throw new AuthError(401, "Please sign in.")
+
+    if (accountRow.password_hash) {
+      if (
+        typeof body.currentPassword !== "string" ||
+        body.currentPassword.length > 1024
+      ) {
+        throw new AuthError(400, "Enter your current password.")
+      }
+      const valid = await checkPassword(
+        body.currentPassword,
+        String(accountRow.password_hash),
+      )
+      if (!valid) throw new AuthError(401, "Current password is incorrect.")
+    }
+
+    const newPassword = passwordValue(body.newPassword, user.email)
+    const encoded = await hashPassword(newPassword)
+    const transaction = await this.db.transaction("write")
+    try {
+      await transaction.execute({
+        sql: "UPDATE flux_accounts SET password_hash = ?, last_password_reset = ? WHERE id = ?",
+        args: [encoded, this.now(), user.id],
+      })
+
+      if (body.revokeOtherSessions !== false && context.sessionToken) {
+        const currentTokenHash = this.hash("session:" + context.sessionToken)
         await transaction.execute({
-          sql: "DELETE FROM flux_sessions WHERE user_id = ?",
-          args: [String(row.user_id)],
+          sql: "DELETE FROM flux_sessions WHERE user_id = ? AND token_hash != ?",
+          args: [user.id, currentTokenHash],
         })
       }
       await transaction.commit()
     } finally {
       transaction.close()
     }
-    return { success: true, sessionsRevoked: body.revokeSessions !== false }
+
+    return {
+      success: true,
+      sessionsRevoked: body.revokeOtherSessions !== false,
+    }
+  }
+
+  async getSessions(context: AuthContext) {
+    const { user } = await this.session(context)
+    return { sessions: await this.devices(user.id, context) }
+  }
+
+  async revokeSession(body: Record<string, unknown>, context: AuthContext) {
+    const { user } = await this.session(context)
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : ""
+    if (!sessionId) throw new AuthError(400, "Invalid session.")
+
+    await this.db.execute({
+      sql: "DELETE FROM flux_sessions WHERE user_id = ? AND substr(token_hash, 1, 16) = ?",
+      args: [user.id, sessionId],
+    })
+    return { success: true }
+  }
+
+  async revokeOtherSessions(context: AuthContext) {
+    const { user } = await this.session(context)
+    if (context.sessionToken) {
+      const currentTokenHash = this.hash("session:" + context.sessionToken)
+      await this.db.execute({
+        sql: "DELETE FROM flux_sessions WHERE user_id = ? AND token_hash != ?",
+        args: [user.id, currentTokenHash],
+      })
+    }
+    return { success: true }
+  }
+
+  async deleteAccount(body: Record<string, unknown>, context: AuthContext) {
+    const { user } = await this.session(context)
+    const accountRow = (
+      await this.db.execute({
+        sql: "SELECT password_hash FROM flux_accounts WHERE id = ?",
+        args: [user.id],
+      })
+    ).rows[0]
+
+    if (accountRow?.password_hash) {
+      if (typeof body.password !== "string" || body.password.length > 1024) {
+        throw new AuthError(
+          400,
+          "Enter your password to confirm account deletion.",
+        )
+      }
+      const valid = await checkPassword(
+        body.password,
+        String(accountRow.password_hash),
+      )
+      if (!valid) throw new AuthError(401, "Incorrect password.")
+    }
+
+    const transaction = await this.db.transaction("write")
+    try {
+      await transaction.execute({
+        sql: "DELETE FROM flux_sessions WHERE user_id = ?",
+        args: [user.id],
+      })
+      await transaction.execute({
+        sql: "DELETE FROM flux_password_resets WHERE user_id = ?",
+        args: [user.id],
+      })
+      await transaction.execute({
+        sql: "DELETE FROM flux_accounts WHERE id = ?",
+        args: [user.id],
+      })
+      await transaction.commit()
+    } finally {
+      transaction.close()
+    }
+
+    return { success: true }
   }
 }

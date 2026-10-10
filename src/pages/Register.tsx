@@ -101,12 +101,12 @@ export default function Register() {
   const finishGoogleSignIn = (user: UserAccount) => {
     setGoogleAccountLink(null)
     setPassword("")
-    navigate("/login", { replace: true, state: { email: user.email } })
     showToast({
       title: "Signed in",
       message: "Connected with Google.",
       type: "notice-green",
     })
+    navigate("/profile", { replace: true })
   }
 
   const handleGoogleRegister = async () => {
